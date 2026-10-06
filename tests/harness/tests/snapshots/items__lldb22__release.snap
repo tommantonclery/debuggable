@@ -48,3 +48,24 @@ source: tests/harness/tests/debuggers.rs
   [1] = 20
   [2] = 30
 }
+## inline_int
+(fx_items::Inline<unsigned int>) f->inline_int = 2 items {
+  [0] = 7
+  [1] = 8
+}
+## inline_str
+(fx_items::Inline<alloc::string::String>) f->inline_str = 1 items {
+  [0] = "gamma" {
+    [0] = 'g'
+    [1] = 'a'
+    [2] = 'm'
+    [3] = 'm'
+    [4] = 'a'
+  }
+}
+## rgb
+(fx_items::Rgb) f->rgb = {
+  [0] = 255
+  [1] = 128
+  [2] = 0
+}
