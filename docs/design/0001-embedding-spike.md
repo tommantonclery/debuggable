@@ -1,5 +1,9 @@
 # debugview: embedding-mechanism spike
 
+> **Renamed 2026-10-06:** the project is now **`debuggable`** (`debuggable`, `debuggable-derive`,
+> `cargo-debuggable`). It was renamed partly to avoid confusion with Sysinternals DebugView.
+> The spike code below keeps the old names, and the findings are unaffected.
+
 **Status:** spike complete. A decision is needed (§6) before any crate scaffolding.
 **Environment:** rustc 1.97.0, GDB 15.1, LLDB 18.1.3 and 20.1.2, Ubuntu 24.04 x86_64.
 Every claim below links to a reproducible proof in `proto/`.

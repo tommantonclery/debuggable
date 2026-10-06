@@ -7,8 +7,8 @@
 The check compares decompressed content, not bytes, because zlib output can differ
 between zlib implementations.
 
-Comment-only lines are replaced by blank lines before compressing: about 7% smaller, and
-line numbers in tracebacks still match gdb.py. Docstrings and code are embedded verbatim.
+Before compressing, comment-only lines are blanked and docstrings reduced to `""`: smaller,
+and line numbers in tracebacks still match gdb.py. Code is embedded verbatim.
 """
 import base64
 import pathlib
@@ -23,9 +23,29 @@ RUST = ROOT / "debuggable/src/__private.rs"
 
 
 def embedded_form(src):
-    """gdb.py as embedded: comment-only lines blanked, everything else unchanged."""
-    lines = src.split(b"\n")
-    return b"\n".join(b"" if l.lstrip().startswith(b"#") else l for l in lines)
+    """gdb.py as embedded: comment-only lines blanked and docstrings reduced to `""`.
+
+    Line numbers are preserved, so tracebacks still point at the right line of gdb.py.
+    Assumes every triple-quoted string in gdb.py starts its own line (true for docstrings;
+    `--check` would fail on a syntax error otherwise, since GDB would reject the script).
+    """
+    out = []
+    in_doc = False
+    for line in src.split(b"\n"):
+        stripped = line.lstrip()
+        if in_doc:
+            out.append(b"")
+            if b'"""' in line:
+                in_doc = False
+        elif stripped.startswith(b'"""'):
+            indent = line[: len(line) - len(stripped)]
+            out.append(indent + b'""')
+            in_doc = stripped.count(b'"""') == 1  # opening only: the docstring continues
+        elif stripped.startswith(b"#"):
+            out.append(b"")
+        else:
+            out.append(line)
+    return b"\n".join(out)
 
 
 def main():

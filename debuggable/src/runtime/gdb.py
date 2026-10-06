@@ -12,7 +12,7 @@ import json
 
 import gdb
 
-MINOR = 2           # bump on any change; must match the entry name in __private.rs
+MINOR = 3           # bump on any change; must match the entry name in __private.rs
 SUMMARY_MAX = 64    # characters per rendered field in a summary
 ITEMS_MAX = 10000   # hard cap on items children
 
@@ -182,7 +182,7 @@ def _render(v):
                 if r is not None:
                     s = str(r)
             if s is None:
-                s = v.format_string(pretty_structs=False, max_elements=8, max_depth=1)
+                s = _without_type_path(v, v.format_string(pretty_structs=False, max_elements=8, max_depth=1))
     except gdb.error:
         return "<unavailable>"
     s = " ".join(s.split())
@@ -207,6 +207,20 @@ def _for_host(s):
         return "".join(out)
     except (AttributeError, LookupError):
         return s  # older GDB or unknown charset name: leave as is
+
+
+def _without_type_path(v, s):
+    """GDB's own Rust printing starts with the full type path:
+    `core::option::Option<alloc::string::String>::Some("a")`, `my::Point {x: 1}`.
+    In a one-line summary that is noise (LLDB shows `Some("a")`), so drop it."""
+    name = v.type.strip_typedefs().name
+    if name and s.startswith(name):
+        rest = s[len(name):]
+        if rest.startswith("::"):
+            return rest[2:]
+        if rest.startswith(" {"):
+            return rest[1:]
+    return s
 
 
 def _int_field(node, name):

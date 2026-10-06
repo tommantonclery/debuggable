@@ -3,16 +3,16 @@ source: tests/harness/tests/debuggers.rs
 ---
 ## map_str
 $1 = 2 items = {
-  [0] = v1 core::option::Option<alloc::string::String>::Some("alpha") = {
+  [0] = v1 Some("alpha") = {
     value = core::option::Option<alloc::string::String>::Some("alpha")
   },
-  [1] = v3 core::option::Option<alloc::string::String>::Some("beta") = {
+  [1] = v3 Some("beta") = {
     value = core::option::Option<alloc::string::String>::Some("beta")
   }
 }
 ## map_int
 $2 = 1 items = {
-  [0] = v1 core::option::Option<i32>::Some(42) = {
+  [0] = v1 Some(42) = {
     value = core::option::Option<i32>::Some(42)
   }
 }
