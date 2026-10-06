@@ -13,3 +13,5 @@ authors = ["tommantonclery <tommantonclery@outlook.com>"]
 [workspace.lints.rust]
 unsafe_code = "deny"
 missing_docs = "warn"
+# Declares our opt-out flag to rustc >= 1.80 (see schema-v1 §2.1).
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(debuggable_disable)"] }

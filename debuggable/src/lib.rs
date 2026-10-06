@@ -2,3 +2,6 @@
 #![no_std]
 
 pub use debuggable_derive::Debuggable;
+
+#[doc(hidden)]
+pub mod __private;

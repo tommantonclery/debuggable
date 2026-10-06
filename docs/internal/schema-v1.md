@@ -1,0 +1,218 @@
+# Descriptor schema v1 (internal)
+
+> **Internal contract.** This is between `debuggable-derive`, the `debuggable` facade, the GDB
+> runtime and the LLDB loader. It is **not** public API and has no stability promise to users.
+> Changes need all four components updated in one release (the facade pins the derive with `=`).
+
+## 1. Overview
+
+Every `#[derive(Debuggable)]` produces exactly **one entry**: a `#[used]` static placed in a
+target-specific link section. The entry holds a JSON **descriptor** of the type. The facade crate
+contributes one extra **runtime entry**, which holds the GDB printer code.
+
+```
+derive ──► descriptor entry (per type) ─┐
+facade ──► runtime entry (once)  ───────┼──► link section in final binary
+                                        │
+           GDB:  auto-loads entries (needs auto-load safe-path)
+           LLDB: loader (installed by cargo-debuggable) parses descriptor entries
+```
+
+Descriptors are **data**. All rendering logic lives in the runtimes, so the derive never emits
+debugger code.
+
+## 2. Link sections
+
+| Condition (evaluated **in the facade**, see §2.1) | Section | Consumers |
+|---|---|---|
+| `cfg(debuggable_disable)` | *none, nothing emitted* | |
+| `target_vendor = "apple"` | `__DATA,__debuggable` | LLDB loader |
+| `unix` and not apple and not `target_os = "aix"` (ELF) | `.debug_gdb_scripts` | GDB (auto-load), LLDB loader |
+| anything else (Windows, wasm, AIX, …) | *none in v1* | |
+
+Every entry static is `#[used]`, sits at item level (never inside a generic or function body),
+and is a plain byte array with no relocations.
+
+### 2.1 Where `cfg`s are evaluated
+
+The facade defines **several versions** of its internal `__entry!` macro behind `#[cfg(...)]`,
+evaluated when the *facade* compiles. The derive's output contains no `cfg` at all. This matters:
+a `cfg` in the expanded code would be evaluated in the **user's** crate, and on Rust ≥ 1.80 that
+gives every user an `unexpected_cfgs` warning for `debuggable_disable`. `RUSTFLAGS` applies to
+the facade too, so `--cfg debuggable_disable` still works.
+
+> To verify in Phase 2: how the facade declares `check-cfg` for `debuggable_disable` without
+> breaking Cargo 1.75 (an unknown manifest key versus a `build.rs`; we prefer no `build.rs`).
+
+### 2.2 Lint constraints (from the spike)
+
+- The `#[link_section]` attribute lives in the facade's `macro_rules!`, not in the derive's
+  output. The tokens then take the facade's edition (2021), so user crates on any edition work.
+- **Never emit `#[allow(unsafe_code)]`** in expanded code. It's a hard error (E0453) in crates
+  with `#![forbid(unsafe_code)]`. The facade's own runtime static uses a local, commented
+  `#[allow(unsafe_code)]`, which is fine because the workspace lint level there is `deny`.
+
+## 3. Entry format
+
+All entries use the GDB inline-script format on **every** target, so the LLDB loader has a single parser.
+
+```
+0x04  <name>  0x0A  <body>  0x00
+```
+
+- `0x04` is `SECTION_SCRIPT_ID_PYTHON_TEXT`.
+- `<name>`: ASCII with no whitespace. GDB runs each name **once**, so names must be unique per
+  type definition.
+- `<body>`: Python source with no `0x00` bytes.
+- The terminator is a single `0x00`.
+
+### 3.1 Descriptor entry
+
+**Name:** `debuggable-v1-<path>@<crate-version>`
+
+- `<path>` is `concat!(module_path!(), "::", "<Ident>")`, for example `my_crate::map::SlotMap`.
+- `<crate-version>` is `env!("CARGO_PKG_VERSION")` of the crate *using* the derive. It keeps two
+  semver-incompatible copies of the same crate in one binary distinct.
+
+**Body, exactly these three lines:**
+```python
+import gdb
+gdb.__dict__.setdefault('_debuggable_q',[]).append((gdb.current_objfile(),r'''<JSON>'''))
+f=getattr(gdb,'_debuggable_flush',None);f and f()
+```
+
+**JSON framing rules,** which the derive guarantees:
+- Compact JSON: no newlines and no insignificant whitespace.
+- **ASCII only**: anything non-ASCII is escaped as `\uXXXX`.
+- `'` is escaped as `'`, so `'''` can never occur inside the JSON. The JSON always ends in
+  `}`, so the raw string can't end in a backslash.
+- Parsers (LLDB loader, `cargo debuggable doctor`) extract the JSON as **the text between the
+  first `r'''` and the next `'''`**.
+
+### 3.2 Runtime entry (GDB only)
+
+**Name:** `debuggable-runtime-gdb-v1.<minor>`. `<minor>` increases with each runtime change that
+stays compatible with v1.
+
+**Body:**
+```python
+import zlib,base64;exec(zlib.decompress(base64.b64decode('<…>')))
+```
+
+The decompressed runtime:
+1. Installs itself only if `gdb._debuggable_rt` is absent **or has a lower minor**. Several facade
+   versions in one binary means several runtime entries, and the newest one wins.
+2. Defines `gdb._debuggable_flush`, then drains `gdb._debuggable_q`.
+3. Registers its printer lookup **per objfile**.
+
+Load order between entries is undefined, which is why the queue and flush handshake exists.
+
+## 4. Descriptor JSON (v1)
+
+```jsonc
+{
+  "v": 1,                              // schema major, always 1
+  "path": "my_crate::map::SlotMap",    // matches the DWARF type name (see §5)
+  "generic": true,                     // type has generic params (lifetimes alone don't count)
+  "kind": "struct",                    // "struct" | "enum"
+
+  // struct only (all optional):
+  "summary": [["field","len"],["lit"," items"]],
+  "hide":    ["free_head", "_k"],
+  "rename":  {"len": "count"},
+  "items":   {"field": "slots", "len": "len"},
+
+  // enum only:
+  "variants": {
+    "Ident": {"summary": [["lit","Ident("],["field","name"],["lit",")"]]},
+    "Num":   {"summary": [["lit","Num("],["field","0"],["lit",")"]], "hide": [], "rename": {}},
+    "Eof":   {}
+  }
+}
+```
+
+Rules:
+
+- **Field names** are the Rust source names. Tuple fields are decimal strings (`"0"`, `"1"`).
+  Runtimes map `"0"` to DWARF's `__0`.
+- **Absent keys** mean "none" or "default". Runtimes **must ignore unknown keys**, which is how
+  v1 grows.
+- **`summary`** is a list of parts: `["lit", text]` or `["field", name]`. A referenced field may be
+  hidden; that's common (summary `{len}`, field `len` hidden).
+- **`hide`** includes the fields the derive hides automatically: any field whose type's last path
+  segment is `PhantomData`. This is syntactic, so type aliases aren't detected.
+- **`rename`** changes only the child label. `summary` refers to fields by their source name.
+- **`items`** (structs only, at most one field):
+  - `field` names a field the runtime resolves **by its DWARF type**:
+    - `Vec<T>`: element type from template argument 0, data pointer from the first pointer leaf,
+      count from the `Vec`'s own `len`.
+    - a raw pointer `*const T` / `*mut T` or `NonNull<T>`: `len` is **required**.
+    - anything else: the runtime shows `<unsupported items source>`; the derive rejects it at
+      compile time where it can tell syntactically.
+  - `len` (optional for `Vec`) names an integer field. The count shown is `min(len, vec.len)` for
+    `Vec`, or `len` for pointers. Runtimes also cap the count at a runtime limit (default 10,000).
+  - Children appear as the remaining visible fields first, then `[0]`, `[1]`, … in place of the
+    items field.
+- **Enum variants:** each key is a variant name. A missing variant or an empty object means the
+  default rendering. The default summary is the variant name. Children are the active variant's
+  visible fields. `items` isn't allowed in variants in v1.
+
+### 4.1 Summary format strings (derive input → parts)
+
+| Input | Parts |
+|---|---|
+| `"{len} items"` | `[["field","len"],["lit"," items"]]` |
+| `"Num({0})"` | `[["lit","Num("],["field","0"],["lit",")"]]` |
+| `"{{literal}}"` | `[["lit","{literal}"]]` |
+
+Compile errors, each with a span on the attribute string: an unknown field, a format spec
+(`{len:x}`), a path (`{a.b}`), an expression, an unclosed brace, and a positional reference on a
+struct with named fields (or the reverse).
+
+### 4.2 Rendering a referenced field (runtimes)
+
+- Integers, bools, chars and floats: the plain value.
+- Anything else: the debugger's own one-line summary for that value. This picks up other
+  formatters, including rustc's std formatters and other `debuggable` types.
+- Truncated at 64 characters with `…`.
+- If unreadable (optimized out, bad memory): `<optimized out>` or `<unavailable>`. **A runtime
+  must never abort printing because of one field.**
+
+## 5. Type matching
+
+A descriptor matches a debugger type whose **name** (typedefs stripped) is:
+- exactly `path`, when `generic` is false
+- `path` or `path<…>`, when `generic` is true. Every instantiation shares one descriptor.
+
+Known limitations, documented for users, with `doctor` reporting descriptors that match nothing:
+- Types defined inside function bodies: DWARF names include the function, but `module_path!()` doesn't.
+- Two semver-incompatible copies of one crate have identical DWARF names, so the debugger can't
+  tell their types apart.
+
+## 6. Enum variant resolution (runtimes)
+
+- **GDB** resolves the active variant itself. **Gotcha:** values reached through arrays arrive
+  unresolved (every variant listed). Re-read through `value.address.dereference()` before choosing.
+- **LLDB** exposes `$variants$` → `$variant$<N>` { `$discr$`, `value` }. Choose the variant where
+  `N == discr` **or** `N == discr & 0xFFFFFFFF` (LLDB ≤ 20 truncates `N` to 32 bits; 22.1.8 doesn't).
+  If nothing matches, use the variant without `$discr$` (the dataful variant).
+
+## 7. Versioning
+
+- **`v` / name prefix `v1`:** the schema major. Any change that an older v1 runtime would
+  *misrender* (not merely ignore) needs `v2`: new entry prefix `debuggable-v2-`, a new runtime
+  name, and v1 and v2 runtimes coexisting.
+- **Additive changes** within v1: new optional keys that an older runtime can safely ignore.
+  Bump the runtime `<minor>`.
+- Because the facade pins the derive with `=`, a binary only ever mixes schema versions through
+  **different facade versions**. That's what the "newest runtime minor wins" rule (§3.2) handles.
+
+## 8. Size budget
+
+| Item | Target |
+|---|---|
+| Descriptor entry overhead (name + 3-line body, excluding JSON) | ≤ 180 B |
+| Typical descriptor JSON | 60–250 B |
+| Runtime entry (zlib + base64) | ≤ 3 KB |
+
+These are measured in CI on the fixture crate, and the regression threshold is set in Phase 6.
