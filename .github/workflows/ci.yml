@@ -54,8 +54,18 @@ jobs:
         run: |
           docker run --rm --cap-add=SYS_PTRACE --security-opt seccomp=unconfined \
             --user "$(id -u):$(id -g)" -v "$PWD:/work" \
-            -e DEBUGGABLE_DEBUGGERS=${{ matrix.debuggers }} -e INSTA_UPDATE=new -e CI=true \
+            -e DEBUGGABLE_DEBUGGERS=${{ matrix.debuggers }} -e INSTA_UPDATE=new -e INSTA_FORCE_PASS=1 -e CI=true \
             dbg cargo test -p debuggable-harness
+      # INSTA_FORCE_PASS records *every* new/changed snapshot instead of stopping at the
+      # first one per test; this step then fails the job if there were any. Hard failures
+      # (breakpoint not hit, errors from our code) still fail the Harness step directly.
+      - name: No new or changed snapshots
+        run: |
+          if ls tests/harness/tests/snapshots/*.snap.new >/dev/null 2>&1; then
+            echo "::error::New or changed snapshots: download the artifact, review with 'cargo insta review', commit"
+            ls tests/harness/tests/snapshots/*.snap.new
+            exit 1
+          fi
       # New or changed snapshots: download, review with `cargo insta review`, commit.
       - name: Upload pending snapshots
         if: failure()
@@ -81,6 +91,14 @@ jobs:
         env:
           DEBUGGABLE_DEBUGGERS: lldb
           INSTA_UPDATE: new
+          INSTA_FORCE_PASS: "1"
+      - name: No new or changed snapshots
+        run: |
+          if ls tests/harness/tests/snapshots/*.snap.new >/dev/null 2>&1; then
+            echo "::error::New or changed snapshots: download the artifact, review with 'cargo insta review', commit"
+            ls tests/harness/tests/snapshots/*.snap.new
+            exit 1
+          fi
       - name: Upload pending snapshots
         if: failure()
         uses: actions/upload-artifact@v4

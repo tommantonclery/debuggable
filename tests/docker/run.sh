@@ -5,8 +5,8 @@
 #   tests/docker/run.sh 22                  # LLDB 22 (CodeLLDB's version)
 #   tests/docker/run.sh 20 --test debuggers # extra args go to `cargo test`
 #
-# New or changed snapshots are written as *.snap.new; review them with
-# `cargo insta review` (install with `cargo install cargo-insta`).
+# New or changed snapshots are all written as *.snap.new (the run does not stop at the
+# first); review them with `cargo insta review` (install with `cargo install cargo-insta`).
 set -eu
 
 v=${1:?usage: tests/docker/run.sh <lldb-major> [cargo test args...]}
@@ -26,5 +26,5 @@ exec docker run --rm \
   --user "$(id -u):$(id -g)" \
   -v "$root:/work" \
   -e "DEBUGGABLE_DEBUGGERS=$debuggers" \
-  -e "INSTA_UPDATE=${INSTA_UPDATE:-new}" \
+  -e "INSTA_UPDATE=${INSTA_UPDATE:-new}" -e "INSTA_FORCE_PASS=${INSTA_FORCE_PASS:-1}" \
   "debuggable-dbg:$v" cargo test -p debuggable-harness "$@"

@@ -1,0 +1,51 @@
+---
+source: tests/harness/tests/debuggers.rs
+---
+## ident
+(fx_enums::Token) f->ident = Ident("foo") {
+  name = "foo" {
+    [0] = 'f'
+    [1] = 'o'
+    [2] = 'o'
+  }
+}
+## num
+(fx_enums::Token) f->num = Num(42) {
+  0 = 42
+}
+## eof
+(fx_enums::Token) f->eof = Eof
+## tokens
+(fx_enums::Token[3]) f->tokens = {
+  [0] = Ident("bar") {
+    name = "bar" {
+      [0] = 'b'
+      [1] = 'a'
+      [2] = 'r'
+    }
+  }
+  [1] = Num(7) {
+    0 = 7
+  }
+  [2] = Eof
+}
+## glyphs
+(fx_enums::Glyph[3]) f->glyphs = {
+  [0] = Char {
+    0 = U+0x00000071 U'q'
+  }
+  [1] = Space
+  [2] = Newline
+}
+## tagged
+(fx_enums::Tagged[3]) f->tagged = {
+  [0] = X {
+    0 = 1
+  }
+  [1] = Y {
+    keep = 2
+  }
+  [2] = Z
+}
+## by_ref
+(fx_enums::Token *) f->by_ref = 0x<addr> Num(-1)
