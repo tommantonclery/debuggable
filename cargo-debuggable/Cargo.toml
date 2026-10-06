@@ -8,5 +8,9 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 
+[dependencies]
+# Reads section tables of ELF and Mach-O binaries for `doctor`. 0.39: 0.40 needs Rust 1.85.
+object = { version = "0.39", default-features = false, features = ["read_core", "elf", "macho", "std"] }
+
 [lints]
 workspace = true

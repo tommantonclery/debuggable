@@ -21,8 +21,8 @@ jobs:
         env:
           RUSTFLAGS: -D warnings
       - run: cargo clippy --workspace --exclude debuggable-harness --all-targets -- -D warnings
-      - name: Derive unit tests
-        run: cargo test -p debuggable-derive
+      - name: Unit tests (derive, CLI incl. setup/remove round trip)
+        run: cargo test -p debuggable-derive -p cargo-debuggable
       # rustc's diagnostic layout is part of the expected output, so these run on the
       # same pinned toolchain as the debugger fixtures.
       - name: Compile-fail tests (pinned toolchain)
