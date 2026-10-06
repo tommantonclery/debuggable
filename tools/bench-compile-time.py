@@ -2,9 +2,13 @@
 """Compile-time guard for #[derive(Debuggable)].
 
 Generates two crates with the same N types, one plain and one deriving `Debuggable` with
-attributes on every type, then times *rebuilds* of each (derive output is not cached by
-incremental compilation, so this is the cost users pay on every edit). Builds alternate
-between the two crates so drift on a shared machine affects both equally.
+attributes on every type, then times *rebuilds* of each. Builds alternate between the two
+crates so drift on a shared machine affects both equally.
+
+Rebuilds are non-incremental (`CARGO_INCREMENTAL=0`), the worst case: release builds and
+most CI (`dtolnay/rust-toolchain` sets it) compile that way. Incremental dev rebuilds cache
+const evaluation and are cheaper. The mode is set here, not inherited, so local runs and
+CI measure the same thing.
 
     tools/bench-compile-time.py                 # 1000 types, 7 rebuilds each
     tools/bench-compile-time.py --types 300 --runs 5 --max-ms-per-type 0
@@ -24,9 +28,10 @@ import time
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 OUT = ROOT / "target" / "compile-time-bench"
 
-# Measured 2026-10-06, 1000 types, 2-core Linux VM: 0.79-0.84 ms per type over four runs.
-# About 3x headroom for slower CI machines; still catches a derive that emits much more
-# code or does work that grows with the number of types.
+# Measured 2026-10-07, 1000 types, non-incremental, 2-core Linux VM: 0.98-1.00 ms per type.
+# The previous entry layout (a byte-by-byte copy in const evaluation) measured 4.8 ms there
+# and 4.1 ms on a GitHub runner; this limit catches a return to anything like it while
+# leaving 2.5x headroom for slower machines.
 DEFAULT_MAX_MS_PER_TYPE = 2.5
 
 
@@ -80,6 +85,7 @@ def write_crate(name, n, derive):
 
 def build(path):
     env = {k: v for k, v in os.environ.items() if k not in ("RUSTFLAGS", "CARGO_TARGET_DIR")}
+    env["CARGO_INCREMENTAL"] = "0"
     start = time.perf_counter()
     r = subprocess.run(["cargo", "build", "-q"], cwd=path, env=env, capture_output=True, text=True)
     elapsed = time.perf_counter() - start

@@ -52,6 +52,14 @@ the facade too, so `--cfg debuggable_disable` still works.
   with `#![forbid(unsafe_code)]`. The facade's own runtime static uses a local, commented
   `#[allow(unsafe_code)]`, which is fine because the workspace lint level there is `deny`.
 
+### 2.3 Compile-time constraint
+
+Each entry is assembled with a single `concat!` (every piece is ASCII text) and turned into
+the static's `[u8; N]` by one read in `__private::bytes`. Never build entries by copying bytes
+in a `const fn` loop: const evaluation costs about 10 µs per byte without incremental
+compilation, which was 4.5 ms per derived type (now about 1 ms, mostly the derive itself).
+`tools/bench-compile-time.py` guards this in CI.
+
 ## 3. Entry format
 
 All entries use the GDB inline-script format on **every** target, so the LLDB loader has a single parser.

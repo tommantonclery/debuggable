@@ -1,39 +1,19 @@
 //! Internals used by `#[derive(Debuggable)]` expansions. Not public API: anything here
 //! can change in any release. See `docs/internal/schema-v1.md`.
 
-/// One link-section entry: exactly the bytes GDB / the LLDB loader read.
-/// `repr(transparent)` so the static's contents are the entry and nothing else.
-#[repr(transparent)]
-pub struct Entry<const N: usize>(pub [u8; N]);
-
-/// Total length of `parts` once concatenated. Used for the `Entry<N>` length.
-pub const fn total_len(parts: &[&[u8]]) -> usize {
-    let mut n = 0;
-    let mut p = 0;
-    while p < parts.len() {
-        n += parts[p].len();
-        p += 1;
-    }
-    n
-}
-
-impl<const N: usize> Entry<N> {
-    /// Concatenate `parts` at compile time. Fails const evaluation if the length is wrong.
-    pub const fn new(parts: &[&[u8]]) -> Self {
-        let mut out = [0u8; N];
-        let mut i = 0;
-        let mut p = 0;
-        while p < parts.len() {
-            let mut j = 0;
-            while j < parts[p].len() {
-                out[i] = parts[p][j];
-                i += 1;
-                j += 1;
-            }
-            p += 1;
-        }
-        assert!(i == N, "debuggable: entry length mismatch");
-        Entry(out)
+/// `s` as a byte array, for a link-section static's initializer.
+///
+/// Entries are assembled with `concat!`, which costs nothing at const evaluation (it is done
+/// during macro expansion); this conversion is the only step left for the const evaluator.
+/// A byte-by-byte copy there was measured at about 4.5 ms per derived type without
+/// incremental compilation; this is a single read. See `tools/bench-compile-time.py`.
+pub const fn bytes<const N: usize>(s: &str) -> [u8; N] {
+    assert!(s.len() == N, "debuggable: entry length mismatch");
+    // SAFETY: `s` is valid for reads of `s.len() == N` bytes (checked above), and `[u8; N]`
+    // has alignment 1 with every bit pattern valid.
+    #[allow(unsafe_code)]
+    unsafe {
+        *(s.as_ptr() as *const [u8; N])
     }
 }
 
@@ -44,26 +24,29 @@ impl<const N: usize> Entry<N> {
 /// ```
 ///
 /// The first argument is the type's identifier. The second is the rest of the descriptor JSON
-/// after `"path"`, already escaped per §3.1 and ending in `}`.
+/// after `"path"`, already escaped per §3.1 and ending in `}`. Every piece is ASCII text, so
+/// the whole entry is one `concat!`.
 #[macro_export]
 #[doc(hidden)]
 macro_rules! __entry {
     ($ident:literal, $json_tail:literal) => {
         const _: () = {
-            const PARTS: &[&[u8]] = &[
-                b"\x04debuggable-v1-",
-                ::core::concat!(::core::module_path!(), "::", $ident, "@", ::core::env!("CARGO_PKG_VERSION"))
-                    .as_bytes(),
-                b"\nimport gdb\ngdb.__dict__.setdefault('_debuggable_q',[]).append((gdb.current_objfile(),r'''{\"v\":1,\"path\":\"",
-                ::core::concat!(::core::module_path!(), "::", $ident).as_bytes(),
-                b"\",",
-                $json_tail.as_bytes(),
-                b"'''))\ngetattr(gdb,'_debuggable_flush',lambda:None)()\n\0",
-            ];
-            $crate::__entry_static!(
-                $crate::__private::Entry<{ $crate::__private::total_len(PARTS) }>,
-                $crate::__private::Entry::new(PARTS)
+            const TEXT: &str = ::core::concat!(
+                "\x04debuggable-v1-",
+                ::core::module_path!(),
+                "::",
+                $ident,
+                "@",
+                ::core::env!("CARGO_PKG_VERSION"),
+                "\nimport gdb\ngdb.__dict__.setdefault('_debuggable_q',[]).append((gdb.current_objfile(),r'''{\"v\":1,\"path\":\"",
+                ::core::module_path!(),
+                "::",
+                $ident,
+                "\",",
+                $json_tail,
+                "'''))\ngetattr(gdb,'_debuggable_flush',lambda:None)()\n\0",
             );
+            $crate::__entry_static!([u8; TEXT.len()], $crate::__private::bytes(TEXT));
         };
     };
 }
@@ -123,18 +106,16 @@ macro_rules! __entry_static_in {
 
 #[cfg(all(not(debuggable_disable), unix, not(target_vendor = "apple"), not(target_os = "aix")))]
 mod gdb_runtime {
-    use super::{total_len, Entry};
-
     // Name must match MINOR in runtime/gdb.py; tools/gen-runtime.py --check enforces it.
     // Runs in a private namespace so nothing leaks into GDB's shared __main__.
-    const PARTS: &[&[u8]] = &[
-        b"\x04debuggable-runtime-gdb-v1.4\nimport zlib,base64;exec(zlib.decompress(base64.b64decode('",
-        include_bytes!("runtime/gdb.py.zb64"),
-        b"')),{'__name__':'debuggable_runtime'})\n\0",
-    ];
+    const TEXT: &str = concat!(
+        "\x04debuggable-runtime-gdb-v1.4\nimport zlib,base64;exec(zlib.decompress(base64.b64decode('",
+        include_str!("runtime/gdb.py.zb64"),
+        "')),{'__name__':'debuggable_runtime'})\n\0",
+    );
 
     #[used]
     #[allow(unsafe_code)] // `link_section` only; the contents are inert bytes read by debuggers
     #[link_section = ".debug_gdb_scripts"]
-    static RUNTIME: Entry<{ total_len(PARTS) }> = Entry::new(PARTS);
+    static RUNTIME: [u8; TEXT.len()] = super::bytes(TEXT);
 }
