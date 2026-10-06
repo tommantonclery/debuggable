@@ -84,7 +84,12 @@
 //! other fields, in place of the field itself.
 //!
 //! - On a `Vec<T>`: shows its elements. With `len`, at most that many.
+//! - On an array `[T; N]` stored in the struct (an inline buffer): shows its elements. With
+//!   `len`, at most that many.
 //! - On a `*const T`, `*mut T` or `NonNull<T>`: `len` is required and gives the count.
+//!
+//! Elements of type `MaybeUninit<T>` or `ManuallyDrop<T>` are shown as `T`. Only the first
+//! `len` of them are read, so give `len` whenever some slots may be uninitialized.
 //!
 //! ```
 //! # use debuggable::Debuggable;
@@ -102,6 +107,13 @@
 //! pub struct RawParts {
 //!     #[debuggable(items, len = "len")]
 //!     ptr: NonNull<u16>,
+//!     len: usize,
+//! }
+//!
+//! #[derive(Debuggable)]
+//! pub struct Inline<T, const N: usize> {
+//!     #[debuggable(items, len = "len")]
+//!     buf: [std::mem::MaybeUninit<T>; N],
 //!     len: usize,
 //! }
 //! ```

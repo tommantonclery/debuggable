@@ -12,7 +12,7 @@ import json
 
 import gdb
 
-MINOR = 3           # bump on any change; must match the entry name in __private.rs
+MINOR = 4           # bump on any change; must match the entry name in __private.rs
 SUMMARY_MAX = 64    # characters per rendered field in a summary
 ITEMS_MAX = 10000   # hard cap on items children
 
@@ -230,6 +230,23 @@ def _int_field(node, name):
     return int(v)
 
 
+# std's repr(transparent) element wrappers: inline buffers store `[MaybeUninit<T>; N]`.
+_TRANSPARENT = ("MaybeUninit", "ManuallyDrop", "MaybeDangling")
+
+
+def _unwrap_transparent(elem):
+    """`MaybeUninit<T>` (and the like) -> `T`. Same size and address, by repr(transparent)."""
+    for _ in range(4):
+        name = (elem.strip_typedefs().name or "").split("<", 1)[0]
+        if not (name.startswith("core::mem::") and name.rsplit("::", 1)[-1] in _TRANSPARENT):
+            break
+        inner = elem.strip_typedefs().template_argument(0)
+        if inner.sizeof != elem.sizeof:
+            break  # not transparent after all: keep the wrapper
+        elem = inner
+    return elem
+
+
 def _items(node, spec):
     """Children `[0]`, `[1]`, ... for an `items` field (schema §4)."""
     src = _field(node, spec["field"])
@@ -244,6 +261,15 @@ def _items(node, spec):
             n = int(src["len"])
             if spec.get("len"):
                 n = min(n, _int_field(node, spec["len"]))
+        elif t.code == gdb.TYPE_CODE_ARRAY:  # [T; N] stored in place (inline buffers)
+            elem = t.target()
+            lo, hi = t.range()
+            n = hi - lo + 1
+            if src.address is None:
+                raise gdb.error("array not in memory")
+            ptr = src.address.cast(elem.pointer())
+            if spec.get("len"):
+                n = min(n, _int_field(node, spec["len"]))
         else:
             ptr = src if t.code == gdb.TYPE_CODE_PTR else _first_ptr(src)  # *T or NonNull<T>
             elem = ptr.type.strip_typedefs().target()
@@ -251,6 +277,7 @@ def _items(node, spec):
                 yield "[..]", "<items: len required>"
                 return
             n = _int_field(node, spec["len"])
+        elem = _unwrap_transparent(elem)
         ptr = ptr.cast(elem.pointer())
     except ValueError:
         yield "[..]", "<unsupported items source>"

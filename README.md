@@ -152,8 +152,8 @@ What it costs them:
 | `summary = "..."` | struct, enum variant | One-line summary. `{field}` (or `{0}` for tuple fields) inserts a field; `{{` and `}}` are literal braces. |
 | `hide` | field | Hide the field. `PhantomData` fields are hidden automatically. |
 | `rename = "..."` | field | Show the field under another name. |
-| `items` | field | Show the field's elements in place of the field: a `Vec<T>`, or a `*const T`, `*mut T` or `NonNull<T>` together with `len`. |
-| `len = "field"` | with `items` | The number of elements to show: for a `Vec`, at most this many; for a pointer, required. |
+| `items` | field | Show the field's elements in place of the field: a `Vec<T>`, an array `[T; N]`, or a `*const T`, `*mut T` or `NonNull<T>` together with `len`. `MaybeUninit<T>` elements are shown as `T`. |
+| `len = "field"` | with `items` | The number of elements to show: for a `Vec` or array, at most this many; for a pointer, required. |
 
 Full reference: [docs.rs/debuggable](https://docs.rs/debuggable).
 

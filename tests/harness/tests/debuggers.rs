@@ -43,7 +43,7 @@ fn enums() {
 
 #[test]
 fn items() {
-    check("items", &["map_str", "map_int", "stack", "empty", "raw"]);
+    check("items", &["map_str", "map_int", "stack", "empty", "raw", "inline_int", "inline_str", "rgb"]);
 }
 
 #[test]

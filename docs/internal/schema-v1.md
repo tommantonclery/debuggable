@@ -170,11 +170,17 @@ Rules:
   - `field` names a field the runtime resolves **by its DWARF type**:
     - `Vec<T>`: element type from template argument 0, data pointer from the first pointer leaf,
       count from the `Vec`'s own `len`.
+    - an array `[T; N]` stored in place: element type and count from the array type, data at
+      the field's own address.
     - a raw pointer `*const T` / `*mut T` or `NonNull<T>`: `len` is **required**.
     - anything else: the runtime shows `<unsupported items source>`; the derive rejects it at
       compile time where it can tell syntactically.
-  - `len` (optional for `Vec`) names an integer field. The count shown is `min(len, vec.len)` for
-    `Vec`, or `len` for pointers. Runtimes also cap the count at a runtime limit (default 10,000).
+  - `len` (optional for `Vec` and arrays) names an integer field. The count shown is
+    `min(len, vec.len)` for `Vec`, `min(len, N)` for arrays, or `len` for pointers. Runtimes also cap the count at a runtime limit (default 10,000).
+  - **Transparent element wrappers:** if the element type is `core::mem::MaybeUninit<U>`,
+    `ManuallyDrop<U>` or `MaybeDangling<U>` (repeatedly, up to 4 levels) and `U` has the same
+    size, elements are read as `U`. Added in GDB runtime minor 4 / LLDB loader 1.2; older
+    runtimes show `<unsupported items source>` for arrays and the wrapper for elements.
   - Children appear as the remaining visible fields first, then `[0]`, `[1]`, … in place of the
     items field.
 - **Enum variants:** each key is a variant name. A missing variant or an empty object means the
@@ -240,6 +246,6 @@ Known limitations, documented for users, with `doctor` reporting descriptors tha
 |---|---|
 | Descriptor entry overhead (name + 3-line body, excluding JSON) | ≤ 180 B |
 | Typical descriptor JSON | 60–250 B |
-| Runtime entry (zlib + base64) | ≤ 5 KB (4.1 KB at minor 3: comment lines blanked and docstrings reduced to `""`, line numbers preserved). |
+| Runtime entry (zlib + base64) | ≤ 5 KB (4.4 KB at minor 4: comment lines blanked and docstrings reduced to `""`, line numbers preserved). |
 
 These are measured in CI on the fixture crate, and the regression threshold is set in Phase 6.

@@ -15,7 +15,7 @@ import json
 
 import lldb
 
-VERSION = "1.1"           # loader version, reported by `debuggable status`
+VERSION = "1.2"           # loader version, reported by `debuggable status`
 CATEGORY = "debuggable"
 SECTION_NAMES = (".debug_gdb_scripts", "__debuggable")
 ENTRY_PREFIX = b"\x04debuggable-v1-"
@@ -177,28 +177,53 @@ def _first_ptr(v):
     raise ValueError("no pointer")
 
 
+# std's repr(transparent) element wrappers: inline buffers store `[MaybeUninit<T>; N]`.
+_TRANSPARENT = ("MaybeUninit", "ManuallyDrop", "MaybeDangling")
+
+
+def _unwrap_transparent(elem):
+    """`MaybeUninit<T>` (and the like) -> `T`. Same size and address, by repr(transparent)."""
+    for _ in range(4):
+        name = (elem.GetUnqualifiedType().GetName() or "").split("<", 1)[0]
+        if not (name.startswith("core::mem::") and name.rsplit("::", 1)[-1] in _TRANSPARENT):
+            break
+        inner = elem.GetTemplateArgumentType(0)
+        if not inner.IsValid() or inner.GetByteSize() != elem.GetByteSize():
+            break  # not transparent after all: keep the wrapper
+        elem = inner
+    return elem
+
+
 def _items(parent, node, spec):
     src = _field(node, spec["field"])
     if src is None:
         return []
     t = src.GetType()
+    lf = _field(node, spec["len"]) if spec.get("len") else None
     if (t.GetName() or "").startswith("alloc::vec::Vec<"):
         elem = t.GetTemplateArgumentType(0)
-        ptr = _first_ptr(src)
+        base = _first_ptr(src).GetValueAsUnsigned()
         n = src.GetChildMemberWithName("len").GetValueAsUnsigned()
-        if spec.get("len"):
-            lf = _field(node, spec["len"])
-            n = min(n, lf.GetValueAsUnsigned()) if lf is not None else n
+        if lf is not None:
+            n = min(n, lf.GetValueAsUnsigned())
+    elif t.IsArrayType():  # [T; N] stored in place (inline buffers)
+        elem = t.GetArrayElementType()
+        base = src.GetLoadAddress()
+        if base == lldb.LLDB_INVALID_ADDRESS or elem.GetByteSize() == 0:
+            return []
+        n = t.GetByteSize() // elem.GetByteSize()
+        if lf is not None:
+            n = min(n, lf.GetValueAsUnsigned())
     else:
         ptr = src if t.IsPointerType() else _first_ptr(src)  # *T or NonNull<T>
         elem = ptr.GetType().GetPointeeType()
-        lf = _field(node, spec["len"]) if spec.get("len") else None
         if lf is None:
             return []
-        n = lf.GetValueAsUnsigned()
+        base, n = ptr.GetValueAsUnsigned(), lf.GetValueAsUnsigned()
+    elem = _unwrap_transparent(elem)
     if not elem.IsValid() or elem.GetByteSize() == 0:
         return []
-    base, size = ptr.GetValueAsUnsigned(), elem.GetByteSize()
+    size = elem.GetByteSize()
     return [parent.CreateValueFromAddress("[%d]" % i, base + i * size, elem)
             for i in range(min(n, ITEMS_MAX))]
 
