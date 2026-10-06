@@ -39,6 +39,15 @@ jobs:
       - name: Embedded GDB runtime is up to date
         run: python3 tools/gen-runtime.py --check
 
+  compile-time:
+    name: Compile-time guard
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      # Rebuild cost of #[derive(Debuggable)] on 1000 types; fails above the limit in the script.
+      - run: python3 tools/bench-compile-time.py
+
   msrv:
     name: MSRV (1.75)
     runs-on: ubuntu-24.04

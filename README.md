@@ -139,7 +139,7 @@ What it costs them:
 - **Binary size:** about 300 bytes per derived type, plus a 4 KB runtime once per Linux binary.
   This is data in a section the debugger reads; no code runs in your program. To leave it out,
   build with `RUSTFLAGS="--cfg debuggable_disable"`.
-- **Compile time:** about 0.7 ms per derived type on rebuilds. The derive uses `syn` 3, which
+- **Compile time:** under 1 ms per derived type on rebuilds (0.4–0.8 ms measured; guarded in CI). The derive uses `syn` 3, which
   `serde`, `tokio`, `thiserror` and `clap` already pull in, so most projects compile nothing extra.
 - **Code:** none. No `unsafe` is required in your crate, and it works under
   `#![forbid(unsafe_code)]`.
