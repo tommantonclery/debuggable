@@ -28,6 +28,7 @@ Without any debugger installed, the snapshot tests are skipped with a message.
 
 - `DEBUGGABLE_DEBUGGERS=gdb,lldb-20` selects exact debuggers (missing ones are an error).
 - `DEBUGGABLE_PROFILES=dev` limits profiles.
+- `DEBUGGABLE_FIXTURE_TOOLCHAIN=stable` overrides the pinned fixture toolchain (snapshots may then differ).
 
 **Pinned versions in Docker**, matching CI:
 

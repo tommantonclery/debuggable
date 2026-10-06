@@ -1,6 +1,6 @@
 //! Structural checks on the built binaries, independent of any debugger.
 
-use debuggable_harness::{binary, build, fixtures_dir, profiles, repo_root};
+use debuggable_harness::{binary, build, fixture_command, fixtures_dir, profiles, repo_root};
 use std::process::Command;
 
 fn contains(hay: &[u8], needle: &str) -> bool {
@@ -58,8 +58,7 @@ fn entries_survive_strip() {
 #[test]
 fn disable_flag_emits_nothing() {
     let target = fixtures_dir().join("target/disabled");
-    let out = Command::new("cargo")
-        .current_dir(fixtures_dir())
+    let out = fixture_command("cargo")
         .env("RUSTFLAGS", "--cfg debuggable_disable")
         .arg("build")
         .arg("--workspace")

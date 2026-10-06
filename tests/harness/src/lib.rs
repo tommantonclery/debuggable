@@ -102,9 +102,22 @@ pub fn debuggers() -> Vec<Debugger> {
 
 static BUILT: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
+/// A command that runs in `tests/fixtures` with the pinned toolchain.
+///
+/// rustup sets `RUSTUP_TOOLCHAIN` for everything `cargo test` spawns, which would override
+/// `tests/fixtures/rust-toolchain.toml`, so remove it. `DEBUGGABLE_FIXTURE_TOOLCHAIN` can
+/// override the pin explicitly (e.g. where the pinned version can't be installed).
+pub fn fixture_command(program: impl AsRef<std::ffi::OsStr>) -> Command {
+    let mut c = Command::new(program);
+    c.current_dir(fixtures_dir()).env_remove("RUSTUP_TOOLCHAIN");
+    if let Ok(t) = std::env::var("DEBUGGABLE_FIXTURE_TOOLCHAIN") {
+        c.env("RUSTUP_TOOLCHAIN", t);
+    }
+    c
+}
+
 fn cargo_in_fixtures() -> Command {
-    let mut c = Command::new("cargo");
-    c.current_dir(fixtures_dir()); // so rustup picks tests/fixtures/rust-toolchain.toml
+    let mut c = fixture_command("cargo");
     c.env_remove("RUSTFLAGS").env_remove("CARGO_TARGET_DIR");
     c
 }
@@ -130,7 +143,7 @@ pub fn binary(fixture: &str, profile: &str) -> PathBuf {
 }
 
 fn rustc_etc_dir() -> PathBuf {
-    let out = Command::new("rustc").current_dir(fixtures_dir()).args(["--print", "sysroot"]).output().unwrap();
+    let out = fixture_command("rustc").args(["--print", "sysroot"]).output().unwrap();
     PathBuf::from(String::from_utf8(out.stdout).unwrap().trim()).join("lib/rustlib/etc")
 }
 
@@ -156,8 +169,8 @@ pub fn run_with_locale(dbg: &Debugger, bin: &Path, fields: &[&str], locale: &str
     let mut cmd;
     match dbg.kind {
         Kind::Gdb => {
-            cmd = Command::new("rust-gdb");
-            cmd.current_dir(fixtures_dir()).env("RUST_GDB", &dbg.bin);
+            cmd = fixture_command("rust-gdb"); // the pinned toolchain's wrapper and printers
+            cmd.env("RUST_GDB", &dbg.bin);
             for a in [
                 "set debuginfod enabled off".to_string(),
                 format!("add-auto-load-safe-path {}", target_dir.display()),
@@ -177,13 +190,16 @@ pub fn run_with_locale(dbg: &Debugger, bin: &Path, fields: &[&str], locale: &str
             // Same order as CodeLLDB and rust-lldb: rustc's formatters, then our loader.
             let etc = rustc_etc_dir();
             let loader = repo_root().join("cargo-debuggable/assets/debuggable_lldb.py");
-            cmd = Command::new(&dbg.bin);
-            cmd.current_dir(fixtures_dir()).args(["-b", "-x"]);
-            for a in [
-                format!("command script import {}", etc.join("lldb_lookup.py").display()),
-                format!("command source -s 1 {}", etc.join("lldb_commands").display()),
-                format!("command script import {}", loader.display()),
-            ] {
+            cmd = fixture_command(&dbg.bin);
+            cmd.args(["-b", "-x"]);
+            let mut pre = vec![format!("command script import {}", etc.join("lldb_lookup.py").display())];
+            // Like rust-lldb: older toolchains register their formatters through
+            // `lldb_commands`; newer ones ship without that file.
+            if etc.join("lldb_commands").exists() {
+                pre.push(format!("command source -s 1 {}", etc.join("lldb_commands").display()));
+            }
+            pre.push(format!("command script import {}", loader.display()));
+            for a in pre {
                 cmd.arg("-O").arg(a);
             }
             cmd.args(["-o", "breakpoint set -n debuggable_fixture_stop", "-o", "run"]);
