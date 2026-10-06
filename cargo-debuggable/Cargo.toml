@@ -1,12 +1,14 @@
 [package]
 name = "cargo-debuggable"
-description = "Set up GDB, LLDB and VS Code to show debuggable visualizers."
+description = "Sets up GDB, LLDB and VS Code (CodeLLDB) for the `debuggable` crate, and checks binaries"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-authors.workspace = true
+readme = "README.md"
+keywords = ["debugger", "gdb", "lldb", "vscode", "cargo-subcommand"]
+categories = ["development-tools::debugging", "development-tools::cargo-plugins", "command-line-utilities"]
 
 [dependencies]
 # Reads section tables of ELF and Mach-O binaries for `doctor`. 0.39: 0.40 needs Rust 1.85.

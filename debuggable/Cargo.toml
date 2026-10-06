@@ -1,15 +1,19 @@
 [package]
 name = "debuggable"
-description = "Make your Rust types readable in GDB and LLDB with one derive."
+description = "Derive macro that makes your types readable in GDB, LLDB and VS Code (CodeLLDB)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-authors.workspace = true
+documentation = "https://docs.rs/debuggable"
+readme = "../README.md"
+keywords = ["debugger", "gdb", "lldb", "derive", "debugging"]
+categories = ["development-tools::debugging", "no-std"]
 
 [dependencies]
-debuggable-derive = { version = "=0.0.0", path = "../debuggable-derive" }
+# Pinned exactly: the derive's output uses this crate's private macros (schema-v1).
+debuggable-derive = { version = "=0.1.0", path = "../debuggable-derive" }
 
 [lints]
 workspace = true

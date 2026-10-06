@@ -271,11 +271,8 @@ pub fn sections(run: &Run, fields: &[&str]) -> Result<String, String> {
     let mut lines = run.stdout.lines().peekable();
     for f in fields {
         let marker = format!("{MARK}{f}");
-        while let Some(l) = lines.next() {
-            if l == marker {
-                break;
-            }
-        }
+        // Skip to this field's marker (consumed).
+        lines.find(|l| *l == marker);
         let mut body = Vec::new();
         while let Some(l) = lines.peek() {
             // A section ends at the next marker (LLDB echoes `script print(...)` first) or

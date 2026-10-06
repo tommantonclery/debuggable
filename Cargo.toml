@@ -4,12 +4,11 @@ exclude = ["tests/fixtures"]
 resolver = "2"
 
 [workspace.package]
-version = "0.0.0"
+version = "0.1.0"
 edition = "2021"
 rust-version = "1.75.0"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/tommantonclery/debuggable"
-authors = ["tommantonclery <tommantonclery@outlook.com>"]
 
 [workspace.lints.rust]
 unsafe_code = "deny"
