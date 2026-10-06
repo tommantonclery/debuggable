@@ -1,0 +1,5 @@
+error: `Debuggable` can't be derived for unions
+ --> tests/ui/union.rs:2:1
+  |
+2 | union Bits {
+  | ^^^^^

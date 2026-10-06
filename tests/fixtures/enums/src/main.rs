@@ -1,19 +1,28 @@
 //! Enums: tagged and niche layouts (64-bit and char niches), arrays (GDB's unresolved
 //! variants), references, per-variant summaries and the variant-name default.
 #![allow(dead_code)]
-use debuggable::__entry;
+use debuggable::Debuggable;
 
-// Ident: #[debuggable(summary = "Ident({name})")], Num: summary "Num({0})", Eof: default
-pub enum Token { Ident { name: String }, Num(i64), Eof }
-__entry!("Token", r#""generic":false,"kind":"enum","variants":{"Ident":{"summary":[["lit","Ident("],["field","name"],["lit",")"]]},"Num":{"summary":[["lit","Num("],["field","0"],["lit",")"]]}}}"#);
+#[derive(Debuggable)]
+pub enum Token {
+    #[debuggable(summary = "Ident({name})")]
+    Ident { name: String },
+    #[debuggable(summary = "Num({0})")]
+    Num(i64),
+    Eof,
+}
 
 // niche in a char (fits in 32 bits); no summaries at all
+#[derive(Debuggable)]
 pub enum Glyph { Char(char), Space, Newline }
-__entry!("Glyph", r#""generic":false,"kind":"enum"}"#);
 
 // explicit tag, hidden field in one variant
-pub enum Tagged { X(u64), Y { keep: u64, drop: u64 }, Z }
-__entry!("Tagged", r#""generic":false,"kind":"enum","variants":{"Y":{"hide":["drop"]}}}"#);
+#[derive(Debuggable)]
+pub enum Tagged {
+    X(u64),
+    Y { keep: u64, #[debuggable(hide)] drop: u64 },
+    Z,
+}
 
 pub struct Fixture<'a> {
     pub ident: Token,

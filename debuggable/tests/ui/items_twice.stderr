@@ -1,0 +1,5 @@
+error: `items` may be used on only one field
+ --> tests/ui/items_twice.rs:5:18
+  |
+5 |     #[debuggable(items)]
+  |                  ^^^^^

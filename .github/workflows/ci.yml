@@ -15,9 +15,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
       - run: cargo build --workspace --exclude debuggable-harness
         env:
           RUSTFLAGS: -D warnings
+      - run: cargo clippy --workspace --exclude debuggable-harness --all-targets -- -D warnings
+      - name: Derive unit tests
+        run: cargo test -p debuggable-derive
+      # rustc's diagnostic layout is part of the expected output, so these run on the
+      # same pinned toolchain as the debugger fixtures.
+      - name: Compile-fail tests (pinned toolchain)
+        run: |
+          tc=$(sed -n 's/^channel = "\(.*\)"/\1/p' tests/fixtures/rust-toolchain.toml)
+          rustup toolchain install "$tc" --profile minimal
+          cargo +"$tc" test -p debuggable --test ui
       - name: Embedded GDB runtime is up to date
         run: python3 tools/gen-runtime.py --check
 

@@ -13,3 +13,6 @@ debuggable-derive = { version = "=0.0.0", path = "../debuggable-derive" }
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+trybuild = "1"

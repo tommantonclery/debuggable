@@ -1,0 +1,5 @@
+error: `len` refers to unknown field `count`; available: `data`, `len`
+ --> tests/ui/len_unknown_field.rs:3:31
+  |
+3 |     #[debuggable(items, len = "count")]
+  |                               ^^^^^^^

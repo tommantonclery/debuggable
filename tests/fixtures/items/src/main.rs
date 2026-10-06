@@ -1,25 +1,46 @@
 //! `items`: Vec with and without `len`, NonNull + len, empty, and generics with two
 //! instantiations of the same type.
 #![allow(dead_code)]
-use debuggable::__entry;
+use debuggable::Debuggable;
 use std::marker::PhantomData;
 use std::ptr::NonNull;
 
-// #[debuggable(summary = "v{version} {value}")], version hidden
-pub struct Slot<V> { pub value: Option<V>, pub version: u32 }
-__entry!("Slot", r#""generic":true,"kind":"struct","summary":[["lit","v"],["field","version"],["lit"," "],["field","value"]],"hide":["version"]}"#);
+#[derive(Debuggable)]
+#[debuggable(summary = "v{version} {value}")]
+pub struct Slot<V> {
+    pub value: Option<V>,
+    #[debuggable(hide)]
+    pub version: u32,
+}
 
-// the brief's example: summary "{len} items", items on slots with len = "len"
-pub struct SlotMap<K, V> { slots: Vec<Slot<V>>, free_head: u32, len: u32, _k: PhantomData<K> }
-__entry!("SlotMap", r#""generic":true,"kind":"struct","summary":[["field","len"],["lit"," items"]],"hide":["free_head","_k","len"],"items":{"field":"slots","len":"len"}}"#);
+// the brief's example
+#[derive(Debuggable)]
+#[debuggable(summary = "{len} items")]
+pub struct SlotMap<K, V> {
+    #[debuggable(items, len = "len")]
+    slots: Vec<Slot<V>>,
+    #[debuggable(hide)]
+    free_head: u32,
+    #[debuggable(hide)]
+    len: u32,
+    _k: PhantomData<K>,
+}
 
-// items on a Vec without len
-pub struct Stack<T> { pub items: Vec<T> }
-__entry!("Stack", r#""generic":true,"kind":"struct","items":{"field":"items"}}"#);
+#[derive(Debuggable)]
+pub struct Stack<T> {
+    #[debuggable(items)]
+    pub items: Vec<T>,
+}
 
-// items on NonNull + len (raw-parts collections)
-pub struct RawBuf { ptr: NonNull<u16>, len: usize, cap: usize }
-__entry!("RawBuf", r#""generic":false,"kind":"struct","summary":[["field","len"],["lit","/"],["field","cap"]],"items":{"field":"ptr","len":"len"}}"#);
+// raw-parts collection
+#[derive(Debuggable)]
+#[debuggable(summary = "{len}/{cap}")]
+pub struct RawBuf {
+    #[debuggable(items, len = "len")]
+    ptr: NonNull<u16>,
+    len: usize,
+    cap: usize,
+}
 
 pub struct Fixture {
     pub map_str: SlotMap<u8, String>,

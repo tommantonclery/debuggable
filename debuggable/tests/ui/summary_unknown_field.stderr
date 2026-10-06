@@ -1,0 +1,5 @@
+error: summary refers to unknown field `lenght`; did you mean `length`?
+ --> tests/ui/summary_unknown_field.rs:2:24
+  |
+2 | #[debuggable(summary = "{lenght} items")]
+  |                        ^^^^^^^^^^^^^^^^

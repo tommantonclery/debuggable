@@ -11,5 +11,11 @@ authors.workspace = true
 [lib]
 proc-macro = true
 
+[dependencies]
+# syn 3: the major that serde_derive, thiserror, tokio-macros and clap_derive already use,
+# so most dependency graphs compile it anyway (measured in Phase 4, Step 15).
+proc-macro2 = "1"
+syn = { version = "3", default-features = false, features = ["derive", "parsing", "printing", "proc-macro"] }
+
 [lints]
 workspace = true

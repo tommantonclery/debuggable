@@ -1,28 +1,35 @@
 //! Structs: summary, hide, rename, tuple fields, PhantomData auto-hide, nested summaries.
-//! `__entry!` calls stand in for `#[derive(Debuggable)]` until Phase 4.
 #![allow(dead_code)]
-use debuggable::__entry;
+use debuggable::Debuggable;
 use std::marker::PhantomData;
 
 pub mod geo {
-    // #[debuggable(summary = "({x}, {y})")]
+    #[derive(debuggable::Debuggable)]
+    #[debuggable(summary = "({x}, {y})")]
     pub struct Point { pub x: i32, pub y: i32 }
-    debuggable::__entry!("Point", r#""generic":false,"kind":"struct","summary":[["lit","("],["field","x"],["lit",", "],["field","y"],["lit",")"]]}"#);
 }
 
-// #[debuggable(summary = "{0} m")]
+#[derive(Debuggable)]
+#[debuggable(summary = "{0} m")]
 pub struct Meters(pub f64);
-__entry!("Meters", r#""generic":false,"kind":"struct","summary":[["field","0"],["lit"," m"]]}"#);
 
-// no summary; #[debuggable(hide)] secret; #[debuggable(rename = "balance_pence")] balance; _p auto-hidden
-pub struct Account { pub id: u32, pub secret: u64, pub balance: i64, pub _p: PhantomData<u8> }
-__entry!("Account", r#""generic":false,"kind":"struct","hide":["secret","_p"],"rename":{"balance":"balance_pence"}}"#);
+// no summary; `_p` is hidden automatically
+#[derive(Debuggable)]
+pub struct Account {
+    pub id: u32,
+    #[debuggable(hide)]
+    pub secret: u64,
+    #[debuggable(rename = "balance_pence")]
+    pub balance: i64,
+    pub _p: PhantomData<u8>,
+}
 
-// #[debuggable(summary = "{from} +{dist}")] -- summaries of other debuggable types
+// summaries of other debuggable types
+#[derive(Debuggable)]
+#[debuggable(summary = "{from} +{dist}")]
 pub struct Trip { pub from: geo::Point, pub dist: Meters }
-__entry!("Trip", r#""generic":false,"kind":"struct","summary":[["field","from"],["lit"," +"],["field","dist"]]}"#);
 
-// a type with no entry at all: must render exactly as the debugger normally would
+// no derive at all: must render exactly as the debugger normally would
 pub struct Plain { pub a: u8 }
 
 pub struct Fixture { pub point: geo::Point, pub meters: Meters, pub account: Account, pub trip: Trip, pub plain: Plain }

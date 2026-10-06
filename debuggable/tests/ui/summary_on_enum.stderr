@@ -1,0 +1,5 @@
+error: `summary` on an enum goes on each variant: `#[debuggable(summary = "...")]` above the variant
+ --> tests/ui/summary_on_enum.rs:2:14
+  |
+2 | #[debuggable(summary = "token")]
+  |              ^^^^^^^

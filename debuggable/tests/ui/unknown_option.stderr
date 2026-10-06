@@ -1,0 +1,5 @@
+error: unknown `debuggable` option `sumary`; did you mean `summary`?
+ --> tests/ui/unknown_option.rs:2:14
+  |
+2 | #[debuggable(sumary = "{a}")]
+  |              ^^^^^^
