@@ -1,0 +1,5 @@
+# Pinned so std formatter output (rustc's GDB/LLDB printers) in snapshots is stable.
+# Bump deliberately, then re-review snapshots: `cargo insta test --review -p debuggable-harness`.
+[toolchain]
+channel = "1.97.0"
+profile = "minimal"

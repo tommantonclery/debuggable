@@ -1,0 +1,20 @@
+# Fixture programs for the debugger harness (tests/harness). Not part of the main
+# workspace: built by the harness with the pinned toolchain in rust-toolchain.toml.
+[workspace]
+members = ["structs", "enums", "items", "deps", "lib2021", "lib2024"]
+resolver = "2"
+
+[workspace.dependencies]
+debuggable = { path = "../../debuggable" }
+
+[profile.release]
+debug = true
+
+[profile.release-thin]
+inherits = "release"
+lto = "thin"
+
+[profile.release-fat]
+inherits = "release"
+lto = "fat"
+codegen-units = 1

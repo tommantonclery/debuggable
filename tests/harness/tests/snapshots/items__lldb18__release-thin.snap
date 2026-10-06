@@ -1,0 +1,81 @@
+---
+source: tests/harness/tests/debuggers.rs
+---
+## map_str
+(fx_items::SlotMap<unsigned char, alloc::string::String>) f->map_str = 2 items {
+  [0] = v1 {...} {
+    value = {
+      $variants$ = {
+        $variant$4294967295 = {
+          $discr$ = 5
+          value =
+        }
+        $variant$ = {
+          value = {
+            0 = "alpha" {
+              [0] = 'a'
+              [1] = 'l'
+              [2] = 'p'
+              [3] = 'h'
+              [4] = 'a'
+            }
+          }
+        }
+      }
+    }
+  }
+  [1] = v3 {...} {
+    value = {
+      $variants$ = {
+        $variant$4294967295 = {
+          $discr$ = 4
+          value =
+        }
+        $variant$ = {
+          value = {
+            0 = "beta" {
+              [0] = 'b'
+              [1] = 'e'
+              [2] = 't'
+              [3] = 'a'
+            }
+          }
+        }
+      }
+    }
+  }
+}
+## map_int
+(fx_items::SlotMap<unsigned char, int>) f->map_int = 1 items {
+  [0] = v1 {...} {
+    value = {
+      $variants$ = {
+        $variant$0 = {
+          $discr$ = 1
+          value =
+        }
+        $variant$1 = {
+          $discr$ = 1
+          value = {
+            0 = 42
+          }
+        }
+      }
+    }
+  }
+}
+## stack
+(fx_items::Stack<unsigned short>) f->stack = {
+  [0] = 5
+  [1] = 6
+}
+## empty
+(fx_items::Stack<unsigned short>) f->empty = {}
+## raw
+(fx_items::RawBuf) f->raw = 3/4 {
+  len = 3
+  cap = 4
+  [0] = 10
+  [1] = 20
+  [2] = 30
+}

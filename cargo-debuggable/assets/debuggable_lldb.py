@@ -53,7 +53,8 @@ def _parse_entries(raw):
         if b < 0:
             continue
         try:
-            d = json.loads(entry[a + 4:b].decode("ascii"))
+            # The derive emits ASCII-only JSON (schema 3.1); accept UTF-8 anyway, as GDB does.
+            d = json.loads(entry[a + 4:b].decode("utf-8"))
         except (ValueError, UnicodeDecodeError):
             continue
         if d.get("v") == 1 and "path" in d:
@@ -204,15 +205,37 @@ def _items(parent, node, spec):
 
 # ---- Providers --------------------------------------------------------------------------
 
+def _pointee(valobj):
+    """The raw value to format. LLDB applies a type's formatters through pointers and
+    references to it (e.g. a `&Token` field), so dereference those first."""
+    v = valobj.GetNonSyntheticValue()
+    t = v.GetType()
+    if t.IsPointerType() or t.IsReferenceType():
+        v = v.Dereference().GetNonSyntheticValue()
+    return v
+
+
+def _node(raw, d):
+    """(node whose fields we show, variant name or None, variant/struct descriptor)."""
+    if d.get("kind") == "enum":
+        node, variant = _active_variant(raw)
+        return node.GetNonSyntheticValue(), variant, d.get("variants", {}).get(variant) or {}
+    return raw, None, d
+
 def summary(valobj, _internal_dict):
     try:
-        raw = valobj.GetNonSyntheticValue()
+        raw = _pointee(valobj)
         d = _find(raw.GetType())
-        node, variant = (_active_variant(raw) if d.get("kind") == "enum" else (raw, None))
-        vd = (d.get("variants", {}).get(variant) or {}) if variant else d
+        if d is None:
+            return ""
+        node, variant, vd = _node(raw, d)
         parts = vd.get("summary")
         if parts is None:
-            return variant or ""
+            if variant:
+                return variant
+            # No summary: LLDB shows the children; if there are none, say so explicitly.
+            # Return "" (not None) for "no summary": LLDB 20 prints a returned None as "None".
+            return "{}" if valobj.GetNumChildren() == 0 else ""
         return "".join(t if k == "lit" else _render(_field(node, t)) for k, t in parts)
     except Exception as e:  # last resort: never break the variables view
         return "<debuggable: %s>" % e
@@ -226,10 +249,13 @@ class Synth:
     def update(self):
         self.kids = []
         try:
-            raw = self.valobj
+            raw = _pointee(self.valobj)
             d = _find(raw.GetType())
-            node, variant = (_active_variant(raw) if d.get("kind") == "enum" else (raw, None))
-            vd = (d.get("variants", {}).get(variant) or {}) if variant else d
+            if d is None:
+                return False
+            # Iterate *raw* children: rustc's own synthetic providers can fail (e.g. tuple
+            # structs on LLDB 18), which would leave us with no children at all.
+            node, _variant, vd = _node(raw, d)
             hide = set(vd.get("hide", ()))
             rename = vd.get("rename", {})
             items = vd.get("items")

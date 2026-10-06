@@ -1,0 +1,31 @@
+---
+source: tests/harness/tests/debuggers.rs
+---
+## point
+(fx_structs::geo::Point) f->point = (3, -4) {
+  x = 3
+  y = -4
+}
+## meters
+(fx_structs::Meters) f->meters = 12.5 m {
+  0 = 12.5
+}
+## account
+(fx_structs::Account) f->account = {
+  id = 7
+  balance_pence = -250
+}
+## trip
+(fx_structs::Trip) f->trip = (1, 2) +0.75 m {
+  from = (1, 2) {
+    x = 1
+    y = 2
+  }
+  dist = 0.75 m {
+    0 = 0.75
+  }
+}
+## plain
+(fx_structs::Plain) f->plain = {
+  a = '\t'
+}

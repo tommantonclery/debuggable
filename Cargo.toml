@@ -1,5 +1,6 @@
 [workspace]
-members = ["debuggable", "debuggable-derive", "cargo-debuggable"]
+members = ["debuggable", "debuggable-derive", "cargo-debuggable", "tests/harness"]
+exclude = ["tests/fixtures"]
 resolver = "2"
 
 [workspace.package]

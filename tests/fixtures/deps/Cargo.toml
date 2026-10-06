@@ -1,0 +1,10 @@
+[package]
+name = "fx-deps"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+debuggable.workspace = true
+lib2021 = { path = "../lib2021" }
+lib2024 = { path = "../lib2024" }

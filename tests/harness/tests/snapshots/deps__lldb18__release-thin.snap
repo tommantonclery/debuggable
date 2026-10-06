@@ -1,0 +1,16 @@
+---
+source: tests/harness/tests/debuggers.rs
+---
+## temp
+(lib2021::Celsius) f->temp = 21.5°C {
+  0 = 21.5
+}
+## pair
+(lib2021::Pair<unsigned char, char32_t>) f->pair = '\x01' & U+0x0000007a U'z' {
+  a = '\x01'
+  b = U+0x0000007a U'z'
+}
+## flag
+(lib2024::Flag) f->flag = on=true {
+  on = true
+}

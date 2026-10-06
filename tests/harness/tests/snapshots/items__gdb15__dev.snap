@@ -1,0 +1,33 @@
+---
+source: tests/harness/tests/debuggers.rs
+---
+## map_str
+$1 = 2 items = {
+  [0] = v1 core::option::Option<alloc::string::String>::Some("alpha") = {
+    value = core::option::Option<alloc::string::String>::Some("alpha")
+  },
+  [1] = v3 core::option::Option<alloc::string::String>::Some("beta") = {
+    value = core::option::Option<alloc::string::String>::Some("beta")
+  }
+}
+## map_int
+$2 = 1 items = {
+  [0] = v1 core::option::Option<i32>::Some(42) = {
+    value = core::option::Option<i32>::Some(42)
+  }
+}
+## stack
+$3 = {
+  [0] = 5,
+  [1] = 6
+}
+## empty
+$4 = {}
+## raw
+$5 = 3/4 = {
+  len = 3,
+  cap = 4,
+  [0] = 10,
+  [1] = 20,
+  [2] = 30
+}

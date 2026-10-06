@@ -1,0 +1,13 @@
+[package]
+name = "debuggable-harness"
+description = "Debugger snapshot tests for debuggable. Not published."
+version = "0.0.0"
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dev-dependencies]
+insta = "1"
+
+[lints]
+workspace = true

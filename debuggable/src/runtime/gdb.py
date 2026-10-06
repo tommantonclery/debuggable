@@ -12,7 +12,7 @@ import json
 
 import gdb
 
-MINOR = 1           # bump on any change; must match the entry name in __private.rs
+MINOR = 2           # bump on any change; must match the entry name in __private.rs
 SUMMARY_MAX = 64    # characters per rendered field in a summary
 ITEMS_MAX = 10000   # hard cap on items children
 
@@ -189,6 +189,26 @@ def _render(v):
     return s if len(s) <= SUMMARY_MAX else s[:SUMMARY_MAX - 1] + "…"
 
 
+def _for_host(s):
+    """GDB raises UnicodeEncodeError when a printer returns characters the host charset
+    can't represent (e.g. LC_ALL=C in CI and containers). Escape those Rust-style."""
+    try:
+        enc = gdb.host_charset()  # GDB >= 12
+        s.encode(enc)
+        return s
+    except UnicodeEncodeError:
+        out = []
+        for c in s:
+            try:
+                c.encode(enc)
+                out.append(c)
+            except UnicodeEncodeError:
+                out.append("\\u{%x}" % ord(c))
+        return "".join(out)
+    except (AttributeError, LookupError):
+        return s  # older GDB or unknown charset name: leave as is
+
+
 def _int_field(node, name):
     v = _field(node, name)
     if v is None or _fetched(v) is None:
@@ -244,10 +264,13 @@ class _Printer:
         try:
             parts = self.vd.get("summary")
             if parts is None:
-                return self.variant  # structs: None, so GDB shows the children only
-            return "".join(
+                if self.variant is not None:
+                    return self.variant
+                # No summary: let GDB show the children, but never an empty " =".
+                return None if any(True for _ in self._children()) else "{}"
+            return _for_host("".join(
                 text if kind == "lit" else _render(_field(self.node, text)) for kind, text in parts
-            )
+            ))
         except Exception as e:  # last resort: never abort the user's print
             return "<debuggable: %s>" % e
 

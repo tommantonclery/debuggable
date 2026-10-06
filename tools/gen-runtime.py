@@ -6,6 +6,9 @@
 
 The check compares decompressed content, not bytes, because zlib output can differ
 between zlib implementations.
+
+Comment-only lines are replaced by blank lines before compressing: about 7% smaller, and
+line numbers in tracebacks still match gdb.py. Docstrings and code are embedded verbatim.
 """
 import base64
 import pathlib
@@ -19,8 +22,14 @@ OUT = ROOT / "debuggable/src/runtime/gdb.py.zb64"
 RUST = ROOT / "debuggable/src/__private.rs"
 
 
+def embedded_form(src):
+    """gdb.py as embedded: comment-only lines blanked, everything else unchanged."""
+    lines = src.split(b"\n")
+    return b"\n".join(b"" if l.lstrip().startswith(b"#") else l for l in lines)
+
+
 def main():
-    src = SRC.read_bytes()
+    src = embedded_form(SRC.read_bytes())
     minor = re.search(rb"^MINOR = (\d+)", src, re.M).group(1).decode()
     name = "debuggable-runtime-gdb-v1.%s" % minor
     if name not in RUST.read_text():

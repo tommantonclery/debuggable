@@ -1,0 +1,31 @@
+---
+source: tests/harness/tests/debuggers.rs
+---
+## ident
+$1 = Ident("foo") = {
+  name = "foo"
+}
+## num
+$2 = Num(42) = {
+  0 = 42
+}
+## eof
+$3 = Eof
+## tokens
+$4 = [Ident("bar") = {
+    name = "bar"
+  }, Num(7) = {
+    0 = 7
+  }, Eof]
+## glyphs
+$5 = [Char = {
+    0 = 113 'q'
+  }, Space, Newline]
+## tagged
+$6 = [X = {
+    0 = 1
+  }, Y = {
+    keep = 2
+  }, Z]
+## by_ref
+$7 = (*mut fx_enums::Token) 0x<addr>

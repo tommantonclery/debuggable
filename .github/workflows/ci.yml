@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    name: Build and lint (stable)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo build --workspace --exclude debuggable-harness
+        env:
+          RUSTFLAGS: -D warnings
+      - name: Embedded GDB runtime is up to date
+        run: python3 tools/gen-runtime.py --check
+
+  msrv:
+    name: MSRV (1.75)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.75.0
+      # Only the published crates: the harness's test dependencies may need newer Rust.
+      # RUSTFLAGS turns *compiler* warnings into errors. Cargo 1.75 prints a manifest
+      # warning about `check-cfg` (it predates that key); that is expected and harmless.
+      - run: cargo check -p debuggable -p debuggable-derive -p cargo-debuggable
+        env:
+          RUSTFLAGS: -D warnings
+
+  debuggers-linux:
+    name: Debuggers (${{ matrix.name }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: "GDB 15 + LLDB 18", lldb: "18", debuggers: "gdb,lldb-18" }
+          - { name: "LLDB 20", lldb: "20", debuggers: "lldb-20" }
+          - { name: "LLDB 22 (CodeLLDB)", lldb: "22", debuggers: "lldb-22" }
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build debugger image
+        run: |
+          toolchain=$(sed -n 's/^channel = "\(.*\)"/\1/p' tests/fixtures/rust-toolchain.toml)
+          docker build -t dbg --build-arg LLDB_VERSION=${{ matrix.lldb }} --build-arg RUST_TOOLCHAIN=$toolchain tests/docker
+      - name: Harness
+        run: |
+          docker run --rm --cap-add=SYS_PTRACE --security-opt seccomp=unconfined \
+            --user "$(id -u):$(id -g)" -v "$PWD:/work" \
+            -e DEBUGGABLE_DEBUGGERS=${{ matrix.debuggers }} -e INSTA_UPDATE=new -e CI=true \
+            dbg cargo test -p debuggable-harness
+      # New or changed snapshots: download, review with `cargo insta review`, commit.
+      - name: Upload pending snapshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: snapshots-${{ matrix.lldb }}
+          path: tests/harness/tests/snapshots/*.snap.new
+          if-no-files-found: ignore
+
+  debuggers-macos:
+    name: Debuggers (macOS, Apple LLDB)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchains
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup toolchain install "$(sed -n 's/^channel = "\(.*\)"/\1/p' tests/fixtures/rust-toolchain.toml)" --profile minimal
+      - name: Allow debugging
+        run: sudo DevToolsSecurity -enable
+      - name: Harness
+        run: cargo test -p debuggable-harness
+        env:
+          DEBUGGABLE_DEBUGGERS: lldb
+          INSTA_UPDATE: new
+      - name: Upload pending snapshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: snapshots-macos
+          path: tests/harness/tests/snapshots/*.snap.new
+          if-no-files-found: ignore
