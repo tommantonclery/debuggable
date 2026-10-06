@@ -58,7 +58,7 @@ macro_rules! __entry {
                 ::core::concat!(::core::module_path!(), "::", $ident).as_bytes(),
                 b"\",",
                 $json_tail.as_bytes(),
-                b"'''))\nf=getattr(gdb,'_debuggable_flush',None);f and f()\n\0",
+                b"'''))\ngetattr(gdb,'_debuggable_flush',lambda:None)()\n\0",
             ];
             $crate::__entry_static!(
                 $crate::__private::Entry<{ $crate::__private::total_len(PARTS) }>,
@@ -116,4 +116,25 @@ macro_rules! __entry_static_in {
         #[link_section = $section]
         static ENTRY: $ty = $init;
     };
+}
+
+// ---- The shared GDB runtime entry (schema-v1 §3.2) -------------------------------------
+// One per facade version in the final binary; GDB has no consumer elsewhere.
+
+#[cfg(all(not(debuggable_disable), unix, not(target_vendor = "apple"), not(target_os = "aix")))]
+mod gdb_runtime {
+    use super::{total_len, Entry};
+
+    // Name must match MINOR in runtime/gdb.py; tools/gen-runtime.py --check enforces it.
+    // Runs in a private namespace so nothing leaks into GDB's shared __main__.
+    const PARTS: &[&[u8]] = &[
+        b"\x04debuggable-runtime-gdb-v1.1\nimport zlib,base64;exec(zlib.decompress(base64.b64decode('",
+        include_bytes!("runtime/gdb.py.zb64"),
+        b"')),{'__name__':'debuggable_runtime'})\n\0",
+    ];
+
+    #[used]
+    #[allow(unsafe_code)] // `link_section` only; the contents are inert bytes read by debuggers
+    #[link_section = ".debug_gdb_scripts"]
+    static RUNTIME: Entry<{ total_len(PARTS) }> = Entry::new(PARTS);
 }
