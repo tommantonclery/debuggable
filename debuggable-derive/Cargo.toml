@@ -1,0 +1,15 @@
+[package]
+name = "debuggable-derive"
+description = "Derive macro for the debuggable crate. Use `debuggable` instead."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[lib]
+proc-macro = true
+
+[lints]
+workspace = true

@@ -1,0 +1,15 @@
+[package]
+name = "debuggable"
+description = "Make your Rust types readable in GDB and LLDB with one derive."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+debuggable-derive = { version = "=0.0.0", path = "../debuggable-derive" }
+
+[lints]
+workspace = true
