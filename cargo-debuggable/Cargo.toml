@@ -13,6 +13,8 @@ categories = ["development-tools::debugging", "development-tools::cargo-plugins"
 [dependencies]
 # Reads section tables of ELF and Mach-O binaries for `doctor`. 0.39: 0.40 needs Rust 1.85.
 object = { version = "0.39", default-features = false, features = ["read_core", "elf", "macho", "std"] }
+# Reads DWARF type names for `doctor`'s matching check. 0.32: 0.33 needs Rust 1.88.
+gimli = { version = "0.32", default-features = false, features = ["read", "std"] }
 
 [lints]
 workspace = true

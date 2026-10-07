@@ -47,6 +47,7 @@ struct Opts {
     hide: Option<Span>,
     rename: Option<LitStr>,
     items: Option<Span>,
+    text: Option<Span>,
     len: Option<LitStr>,
 }
 
@@ -59,12 +60,12 @@ fn opts(attrs: &[Attribute], place: Place) -> Result<Opts> {
             let allowed = match key.as_str() {
                 "summary" => matches!(place, Place::Struct | Place::Variant),
                 "hide" | "rename" => matches!(place, Place::StructField | Place::VariantField),
-                "items" | "len" => place == Place::StructField,
+                "items" | "text" | "len" => place == Place::StructField,
                 _ => {
-                    const OPTIONS: [&str; 5] = ["summary", "hide", "rename", "items", "len"];
+                    const OPTIONS: [&str; 6] = ["summary", "hide", "rename", "items", "text", "len"];
                     return Err(m.error(match closest(&key, OPTIONS) {
                         Some(best) => format!("unknown `debuggable` option `{key}`; did you mean `{best}`?"),
-                        None => "unknown `debuggable` option; expected one of: `summary`, `hide`, `rename`, `items`, `len`"
+                        None => "unknown `debuggable` option; expected one of: `summary`, `hide`, `rename`, `items`, `text`, `len`"
                             .to_string(),
                     }));
                 }
@@ -93,6 +94,7 @@ fn opts(attrs: &[Attribute], place: Place) -> Result<Opts> {
                 "rename" => value(&m, &mut o.rename),
                 "len" => value(&m, &mut o.len),
                 "hide" => flag(&m, &mut o.hide),
+                "text" => flag(&m, &mut o.text),
                 _ => flag(&m, &mut o.items),
             }
         })?;
@@ -106,7 +108,7 @@ fn misplaced(key: &str, place: Place) -> String {
             "`summary` on an enum goes on each variant: `#[debuggable(summary = \"...\")]` above the variant".into()
         }
         ("summary", _) => "`summary` is allowed on a struct or an enum variant, not on a field".into(),
-        ("items" | "len", Place::VariantField) => format!("`{key}` is not supported inside enum variants"),
+        ("items" | "text" | "len", Place::VariantField) => format!("`{key}` is not supported inside enum variants"),
         (_, Place::Struct | Place::Enum | Place::Variant) => format!("`{key}` is allowed on fields only"),
         _ => format!("`{key}` is not allowed here"),
     }
@@ -130,8 +132,11 @@ fn fields(fields: &Fields, place: Place) -> Result<Vec<Field>> {
         if let (Some(_), Some(items)) = (o.hide, o.items) {
             return Err(Error::new(items, "`items` already replaces the field with its elements; remove `hide`"));
         }
-        if let (Some(len), None) = (&o.len, o.items) {
-            return Err(Error::new(len.span(), "`len` needs `items` on the same field"));
+        if let (Some(_), Some(text)) = (o.items, o.text) {
+            return Err(Error::new(text, "a field can't have both `items` and `text`"));
+        }
+        if let (Some(len), None, None) = (&o.len, o.items, o.text) {
+            return Err(Error::new(len.span(), "`len` needs `items` or `text` on the same field"));
         }
         if let Some(items) = o.items {
             if items_seen {
@@ -149,6 +154,7 @@ fn fields(fields: &Fields, place: Place) -> Result<Vec<Field>> {
             hide: o.hide.is_some() || is_phantom(&f.ty),
             rename: o.rename.map(|r| r.value()),
             items: o.items.is_some(),
+            text: o.text.is_some(),
             len: o.len.map(|l| (l.value(), l.span())),
         });
     }
@@ -322,6 +328,18 @@ mod tests {
     }
 
     #[test]
+    fn text_fields() {
+        assert_eq!(
+            json(r#"#[debuggable(summary = "{xs}")] struct S<const N: usize> {
+                #[debuggable(hide)] len: u8,
+                #[debuggable(text, len = "len", hide)] xs: [u8; N],
+                #[debuggable(text)] tag: [u8; 4],
+            }"#),
+            r#""generic":true,"kind":"struct","summary":[["field","xs"]],"hide":["len","xs"],"text":[{"field":"xs","len":"len"},{"field":"tag"}]}"#
+        );
+    }
+
+    #[test]
     fn enum_variants_and_defaults() {
         assert_eq!(
             json(r#"enum Token { #[debuggable(summary = "Ident({name})")] Ident { name: String }, #[debuggable(summary = "Num({0})")] Num(i64), Eof }"#),
@@ -359,7 +377,11 @@ mod tests {
             (r#"#[debuggable(hide)] struct S { a: u8 }"#, "fields only"),
             (r#"struct S { #[debuggable(summary = "x")] a: u8 }"#, "not on a field"),
             (r#"enum E { A { #[debuggable(items)] v: Vec<u8> } }"#, "not supported inside enum variants"),
-            (r#"struct S { #[debuggable(len = "n")] v: Vec<u8>, n: usize }"#, "needs `items`"),
+            (r#"struct S { #[debuggable(len = "n")] v: Vec<u8>, n: usize }"#, "`len` needs `items` or `text`"),
+            (r#"struct S { #[debuggable(items, text)] v: Vec<u8> }"#, "both `items` and `text`"),
+            (r#"struct S { #[debuggable(text, text)] v: Vec<u8> }"#, "duplicate `text`"),
+            (r#"struct S { #[debuggable(txt)] v: Vec<u8> }"#, "did you mean `text`?"),
+            (r#"enum E { A { #[debuggable(text)] v: Vec<u8> } }"#, "`text` is not supported inside enum variants"),
             (r#"struct S { #[debuggable(items)] a: Vec<u8>, #[debuggable(items)] b: Vec<u8> }"#, "only one field"),
             (r#"struct S { #[debuggable(items, len = "count")] v: Vec<u8>, n: usize }"#, "unknown field `count`; available: `v`, `n`"),
             (r#"#[debuggable(summary = "{x}")] struct S { a: u8 }"#, "unknown field `x`; available: `a`"),

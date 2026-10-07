@@ -48,6 +48,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "fx-text"
+version = "0.1.0"
+dependencies = [
+ "debuggable",
+]
+
+[[package]]
 name = "lib2021"
 version = "0.3.1"
 dependencies = [

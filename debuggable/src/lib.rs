@@ -120,6 +120,30 @@
 //!
 //! At most 10,000 elements are shown.
 //!
+//! ## `text`: show bytes as a string
+//!
+//! On any number of fields. The field's bytes are shown as a string literal, as UTF-8:
+//! `"hello"`. Escapes follow Rust's `{:?}` for strings (`\n`, `\"`, `\0`), and bytes that
+//! aren't valid UTF-8 show as `\xNN`, so nothing is lost. Takes the same sources as `items`,
+//! with elements of one byte: `[u8; N]`, `[MaybeUninit<u8>; N]`, `Vec<u8>`, or a pointer with
+//! `len`. With `hide`, the field gets no row of its own but a summary can still show it.
+//!
+//! ```
+//! # use debuggable::Debuggable;
+//! # use std::mem::MaybeUninit;
+//! #[derive(Debuggable)]
+//! #[debuggable(summary = "{buf}")]
+//! pub struct InlineString<const N: usize> {
+//!     #[debuggable(text, len = "len", hide)]
+//!     buf: [MaybeUninit<u8>; N],
+//!     #[debuggable(hide)]
+//!     len: u8,
+//! }
+//! ```
+//!
+//! An `InlineString` holding "hello" then shows as just `"hello"`, like a `String`. At most
+//! 1,024 bytes are read; LLDB leaves out trailing NUL bytes.
+//!
 //! # Compile errors
 //!
 //! Every mistake is a compile error pointing at the attribute, with suggestions for typos:
@@ -139,14 +163,15 @@
 //!
 //! # Cost, and opting out
 //!
-//! About 300 bytes per derived type in the final binary, plus a 4 KB GDB runtime once per
+//! About 300 bytes per derived type in the final binary, plus a 5 KB GDB runtime once per
 //! Linux binary: data in a section that only debuggers read. On Windows nothing is emitted
 //! (not supported yet). Build with `RUSTFLAGS="--cfg debuggable_disable"` to emit nothing
 //! anywhere.
 //!
 //! # Limitations
 //!
-//! - Types defined inside function bodies are not matched by the debugger.
+//! - Types defined inside function bodies are not matched by the debugger
+//!   (`cargo debuggable doctor <binary>` points them out).
 //! - Summaries refer to fields by name only: no expressions or format specs.
 //! - Windows (Natvis) is not supported yet.
 //!

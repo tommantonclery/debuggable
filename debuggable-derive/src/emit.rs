@@ -15,6 +15,8 @@ pub(crate) struct Field {
     pub hide: bool,
     pub rename: Option<String>,
     pub items: bool,
+    /// `#[debuggable(text)]`: shown as a string (with `len`, at most that many bytes).
+    pub text: bool,
     pub len: Option<(String, Span)>,
 }
 
@@ -66,7 +68,7 @@ fn list<T>(items: &[T], out: &mut String, mut each: impl FnMut(&T, &mut String))
     out.push(']');
 }
 
-/// `,"summary":...,"hide":...,"rename":...,"items":...` for one field set (may be empty).
+/// `,"summary":...,"hide":...,"rename":...,"items":...,"text":...` for one field set (may be empty).
 fn members(summary: Option<&[Part]>, fields: &[Field], out: &mut String) {
     if let Some(parts) = summary {
         out.push_str(",\"summary\":");
@@ -101,14 +103,25 @@ fn members(summary: Option<&[Part]>, fields: &[Field], out: &mut String) {
         out.push('}');
     }
     if let Some(f) = fields.iter().find(|f| f.items) {
-        out.push_str(",\"items\":{\"field\":");
-        json_str(&f.name, out);
-        if let Some((len, _)) = &f.len {
-            out.push_str(",\"len\":");
-            json_str(len, out);
-        }
-        out.push('}');
+        out.push_str(",\"items\":");
+        source(f, out);
     }
+    let texts: Vec<&Field> = fields.iter().filter(|f| f.text).collect();
+    if !texts.is_empty() {
+        out.push_str(",\"text\":");
+        list(&texts, out, |f, out| source(f, out));
+    }
+}
+
+/// `{"field":"xs","len":"len"}`: a field and its optional length field.
+fn source(f: &Field, out: &mut String) {
+    out.push_str("{\"field\":");
+    json_str(&f.name, out);
+    if let Some((len, _)) = &f.len {
+        out.push_str(",\"len\":");
+        json_str(len, out);
+    }
+    out.push('}');
 }
 
 /// The descriptor JSON after `"path"` (the facade's `__entry!` adds `{"v":1,"path":...,`).

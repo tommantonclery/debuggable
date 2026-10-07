@@ -1,0 +1,24 @@
+---
+source: tests/harness/tests/debuggers.rs
+---
+## name
+$1 = "hello"
+## empty
+$2 = ""
+## tag
+$3 = tag "AB\0C" = {
+  name = "AB\0C",
+  id = 7
+}
+## buf
+$4 = "h\xffi \"q\" \\ \n\tcafé" = {
+  data = "h\xffi \"q\" \\ \n\tcafé"
+}
+## raw
+$5 = 8 bytes: "hi there" = {
+  len = 8
+}
+## long
+$6 = "abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijab… = {
+  data = "abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij"
+}

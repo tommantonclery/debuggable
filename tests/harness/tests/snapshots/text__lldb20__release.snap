@@ -1,0 +1,24 @@
+---
+source: tests/harness/tests/debuggers.rs
+---
+## name
+(fx_text::InlineStr<16>) f->name = "hello"
+## empty
+(fx_text::InlineStr<8>) f->empty = ""
+## tag
+(fx_text::Tag) f->tag = tag "AB\0C" {
+  name = "AB\0C"
+  id = 7
+}
+## buf
+(fx_text::Buf) f->buf = "h\xffi \"q\" \\ \n\tcafé" {
+  data = "h\xffi \"q\" \\ \n\tcafé"
+}
+## raw
+(fx_text::RawText) f->raw = 8 bytes: "hi there" {
+  len = 8
+}
+## long
+(fx_text::Buf) f->long = "abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijab… {
+  data = "abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij"
+}

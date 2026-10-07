@@ -136,7 +136,7 @@ already for another crate.
 
 What it costs them:
 
-- **Binary size:** about 300 bytes per derived type, plus a 4 KB runtime once per Linux binary.
+- **Binary size:** about 300 bytes per derived type, plus a 5 KB runtime once per Linux binary.
   This is data in a section the debugger reads; no code runs in your program. To leave it out,
   build with `RUSTFLAGS="--cfg debuggable_disable"`.
 - **Compile time:** about 1 ms per derived type on rebuilds without incremental compilation (0.5–1.0 ms measured; guarded in CI). The derive uses `syn` 3, which
@@ -153,7 +153,8 @@ What it costs them:
 | `hide` | field | Hide the field. `PhantomData` fields are hidden automatically. |
 | `rename = "..."` | field | Show the field under another name. |
 | `items` | field | Show the field's elements in place of the field: a `Vec<T>`, an array `[T; N]`, or a `*const T`, `*mut T` or `NonNull<T>` together with `len`. `MaybeUninit<T>` elements are shown as `T`. |
-| `len = "field"` | with `items` | The number of elements to show: for a `Vec` or array, at most this many; for a pointer, required. |
+| `text` | field | Show the field's bytes as a string, `"hello"`: a `[u8; N]`, `Vec<u8>` or byte pointer, with `len` as for `items`. Invalid UTF-8 shows as `\xNN`. |
+| `len = "field"` | with `items` or `text` | The number of elements to show: for a `Vec` or array, at most this many; for a pointer, required. |
 
 Full reference: [docs.rs/debuggable](https://docs.rs/debuggable).
 
@@ -170,7 +171,7 @@ fat-LTO builds; VS Code was tested by hand on Linux. Details and known issues: [
 
 ## Limitations
 
-- Types defined inside function bodies aren't matched by the debugger.
+- Types defined inside function bodies aren't matched by the debugger (`cargo debuggable doctor` points them out).
 - Summaries refer to fields by name; there is no expression language or format specs (yet).
 - Windows/Natvis isn't supported yet.
 - In plain `gdb`, standard library types (`String`, `Vec`, ...) inside your summaries show raw; use
@@ -179,7 +180,7 @@ fat-LTO builds; VS Code was tested by hand on Linux. Details and known issues: [
 ## How it works
 
 The derive embeds a small JSON description of each type in the binary. On Linux, a section
-GDB auto-loads also holds a 4 KB runtime that renders those descriptions, so GDB needs no setup
+GDB auto-loads also holds a 5 KB runtime that renders those descriptions, so GDB needs no setup
 beyond trusting your build directory. LLDB can't auto-load, so `cargo debuggable setup` installs
 a loader that reads the same descriptions. Details: [how it works](docs/how-it-works.md).
 

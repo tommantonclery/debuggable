@@ -12,9 +12,10 @@ import json
 
 import gdb
 
-MINOR = 4           # bump on any change; must match the entry name in __private.rs
+MINOR = 5           # bump on any change; must match the entry name in __private.rs
 SUMMARY_MAX = 64    # characters per rendered field in a summary
 ITEMS_MAX = 10000   # hard cap on items children
+TEXT_MAX = 1024     # bytes read for a text field
 
 _SCALARS = (gdb.TYPE_CODE_INT, gdb.TYPE_CODE_BOOL, gdb.TYPE_CODE_CHAR, gdb.TYPE_CODE_FLT)
 
@@ -185,7 +186,10 @@ def _render(v):
                 s = _without_type_path(v, v.format_string(pretty_structs=False, max_elements=8, max_depth=1))
     except gdb.error:
         return "<unavailable>"
-    s = " ".join(s.split())
+    return _clip(" ".join(s.split()))
+
+
+def _clip(s):
     return s if len(s) <= SUMMARY_MAX else s[:SUMMARY_MAX - 1] + "…"
 
 
@@ -247,12 +251,16 @@ def _unwrap_transparent(elem):
     return elem
 
 
-def _items(node, spec):
-    """Children `[0]`, `[1]`, ... for an `items` field (schema §4)."""
+class _SourceError(Exception):
+    """An items/text source that can't be read; the message is shown in its place."""
+
+
+def _source(node, spec, kind):
+    """(pointer to the first element, element type, count) for an `items` or `text` field
+    (schema §4). Raises _SourceError."""
     src = _field(node, spec["field"])
     if src is None:
-        yield "[..]", "<unavailable>"
-        return
+        raise _SourceError("<unavailable>")
     try:
         t = src.type.strip_typedefs()
         if (t.name or "").startswith("alloc::vec::Vec<"):
@@ -274,24 +282,66 @@ def _items(node, spec):
             ptr = src if t.code == gdb.TYPE_CODE_PTR else _first_ptr(src)  # *T or NonNull<T>
             elem = ptr.type.strip_typedefs().target()
             if not spec.get("len"):
-                yield "[..]", "<items: len required>"
-                return
+                raise _SourceError("<%s: len required>" % kind)
             n = _int_field(node, spec["len"])
         elem = _unwrap_transparent(elem)
-        ptr = ptr.cast(elem.pointer())
+        return ptr.cast(elem.pointer()), elem, max(0, n)
     except ValueError:
-        yield "[..]", "<unsupported items source>"
-        return
+        raise _SourceError("<unsupported %s source>" % kind)
     except (gdb.error, RuntimeError):
-        yield "[..]", "<optimized out>"
+        raise _SourceError("<optimized out>")
+
+
+def _items(node, spec):
+    """Children `[0]`, `[1]`, ... for an `items` field."""
+    try:
+        ptr, _, n = _source(node, spec, "items")
+    except _SourceError as e:
+        yield "[..]", str(e)
         return
-    for i in range(max(0, min(n, ITEMS_MAX))):
+    for i in range(min(n, ITEMS_MAX)):
         try:
             el = (ptr + i).dereference()
             el.fetch_lazy()
         except gdb.error:
             el = "<unavailable>"
         yield "[%d]" % i, el
+
+
+_ESCAPES = {"\0": "\\0", "\t": "\\t", "\r": "\\r", "\n": "\\n", "\\": "\\\\", '"': '\\"'}
+
+
+def _escape(raw):
+    """Bytes as the inside of a Rust-style string literal: UTF-8 decoded, `\\n`-style and
+    `\\u{..}` escapes for control characters, and `\\xNN` for bytes that aren't UTF-8."""
+    out = []
+    for c in raw.decode("utf-8", "surrogateescape"):
+        o = ord(c)
+        if 0xDC80 <= o <= 0xDCFF:  # an invalid byte, smuggled through by surrogateescape
+            out.append("\\x%02x" % (o - 0xDC00))
+        elif c in _ESCAPES:
+            out.append(_ESCAPES[c])
+        elif o < 0x20 or 0x7F <= o < 0xA0:
+            out.append("\\u{%x}" % o)
+        else:
+            out.append(c)
+    return "".join(out)
+
+
+def _text(node, spec):
+    """A `text` field as a quoted literal, or a `<...>` message (schema §4)."""
+    try:
+        ptr, elem, n = _source(node, spec, "text")
+    except _SourceError as e:
+        return str(e)
+    if elem.sizeof != 1:
+        return "<text: elements are not bytes>"
+    k = min(n, TEXT_MAX)
+    try:
+        raw = gdb.selected_inferior().read_memory(int(ptr), k).tobytes() if k else b""
+    except gdb.error:
+        return "<unavailable>"
+    return '"' + _escape(raw) + ('"…' if n > k else '"')
 
 
 class _Printer:
@@ -304,13 +354,17 @@ class _Printer:
     def to_string(self):
         try:
             parts = self.vd.get("summary")
+            texts = {t["field"]: t for t in self.vd.get("text", ())}
             if parts is None:
                 if self.variant is not None:
                     return self.variant
                 # No summary: let GDB show the children, but never an empty " =".
                 return None if any(True for _ in self._children()) else "{}"
             return _for_host("".join(
-                text if kind == "lit" else _render(_field(self.node, text)) for kind, text in parts
+                text if kind == "lit"
+                else _clip(_text(self.node, texts[text])) if text in texts
+                else _render(_field(self.node, text))
+                for kind, text in parts
             ))
         except Exception as e:  # last resort: never abort the user's print
             return "<debuggable: %s>" % e
@@ -330,11 +384,15 @@ class _Printer:
         items = self.vd.get("items")
         if items:
             hide.add(items["field"])
+        texts = {t["field"]: t for t in self.vd.get("text", ())}
         for f in node.type.fields():
             if not f.name or f.artificial:
                 continue
             src = f.name[2:] if f.name.startswith("__") and f.name[2:].isdigit() else f.name
             if src in hide:
+                continue
+            if src in texts:  # a Python str child is printed as is: our literal, unquoted again
+                yield rename.get(src, src), _for_host(_text(node, texts[src]))
                 continue
             v = _fetched(node[f])
             yield rename.get(src, src), (v if v is not None else "<optimized out>")

@@ -47,6 +47,11 @@ fn items() {
 }
 
 #[test]
+fn text() {
+    check("text", &["name", "empty", "tag", "buf", "raw", "long"]);
+}
+
+#[test]
 fn deps() {
     check("deps", &["temp", "pair", "flag"]);
 }

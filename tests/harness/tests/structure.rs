@@ -13,6 +13,7 @@ const EXPECTED: &[(&str, &[&str])] = &[
     ("structs", &["fx_structs::geo::Point@0.1.0", "fx_structs::Meters@", "fx_structs::Account@", "fx_structs::Trip@"]),
     ("enums", &["fx_enums::Token@", "fx_enums::Glyph@", "fx_enums::Tagged@"]),
     ("items", &["fx_items::Slot@", "fx_items::SlotMap@", "fx_items::Stack@", "fx_items::RawBuf@"]),
+    ("text", &["fx_text::InlineStr@", "fx_text::Tag@", "fx_text::Buf@", "fx_text::RawText@"]),
     ("deps", &["lib2021::Celsius@0.3.1", "lib2021::Pair@0.3.1", "lib2024::Flag@0.3.1"]),
 ];
 
@@ -38,6 +39,39 @@ fn every_entry_survives_linking_in_every_profile() {
         }
     }
     assert!(missing.is_empty(), "missing entries:\n{}", missing.join("\n"));
+}
+
+/// `cargo debuggable doctor` finds every fixture type in the debug info under the path its
+/// descriptor names (schema-v1 §5), in every profile. ELF only: on macOS the debug info is not
+/// in the executable.
+#[cfg(all(unix, not(target_vendor = "apple")))]
+#[test]
+fn doctor_matches_every_type_in_debug_info() {
+    let mut problems = Vec::new();
+    for profile in profiles() {
+        build(&profile);
+        for (fixture, _) in EXPECTED {
+            let bin = binary(fixture, &profile);
+            let out = Command::new(env!("CARGO"))
+                .current_dir(repo_root())
+                .args(["run", "-q", "-p", "cargo-debuggable", "--", "debuggable", "doctor"])
+                .arg(&bin)
+                .output()
+                .unwrap();
+            let text = String::from_utf8_lossy(&out.stdout);
+            // Only the binary's section: the configuration checks depend on this machine.
+            let binary_part = text.split_once("\nBinary ").map_or("", |(_, b)| b);
+            let all_found = binary_part.lines().any(|l| {
+                l.trim_start().strip_prefix("ok    ").and_then(|m| m.split_once(" described type(s) found")).is_some_and(
+                    |(counts, _)| matches!(counts.split_once(" of "), Some((a, b)) if a == b),
+                )
+            });
+            if !all_found || binary_part.contains("  warn  ") {
+                problems.push(format!("{profile}/{fixture}:\n{text}{}", String::from_utf8_lossy(&out.stderr)));
+            }
+        }
+    }
+    assert!(problems.is_empty(), "{}", problems.join("\n"));
 }
 
 #[test]

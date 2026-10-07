@@ -21,6 +21,8 @@ It only edits clearly marked blocks, backs up each file before its first change,
 hand-made configuration alone. `cargo debuggable setup --remove` restores everything exactly.
 
 `doctor` checks your debuggers, your configuration and (given a path) a binary, and prints the
-fix for each problem it finds.
+fix for each problem it finds. For a Linux binary it also checks that every described type is in
+the debug info under the name debuggers will look for, and points out types they can't match,
+such as types defined inside a function.
 
 See the [`debuggable` README](https://github.com/tommantonclery/debuggable) for the full guide.

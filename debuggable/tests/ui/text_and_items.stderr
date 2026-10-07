@@ -1,0 +1,5 @@
+error: a field can't have both `items` and `text`
+ --> tests/ui/text_and_items.rs:3:25
+  |
+3 |     #[debuggable(items, text)]
+  |                         ^^^^

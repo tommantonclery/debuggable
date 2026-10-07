@@ -3,6 +3,22 @@
 All three crates (`debuggable`, `debuggable-derive`, `cargo-debuggable`) are released together
 with the same version. This project follows [Semantic Versioning](https://semver.org).
 
+## Unreleased
+
+### `debuggable`
+
+- New `text` field attribute: shows a byte buffer (`[u8; N]`, `[MaybeUninit<u8>; N]`,
+  `Vec<u8>`, or a byte pointer with `len`) as a string, `"hello"`. Escapes follow Rust's
+  `{:?}`, and invalid UTF-8 shows as `\xNN`. Works with `len` and `hide`, so an inline string
+  type can display exactly like `String`. GDB runtime 1.5.
+
+### `cargo-debuggable`
+
+- LLDB loader 1.3: supports `text`. Run `cargo debuggable setup` again after upgrading.
+- `doctor <binary>` checks each described type against the binary's debug info (Linux): it
+  warns about types debuggers can't match, such as types defined inside a function, and about
+  debug info without types (`debug = "line-tables-only"`).
+
 ## 0.1.0 — 2026-10-07
 
 First release.

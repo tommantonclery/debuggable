@@ -4,6 +4,8 @@ use crate::edit::{self, Comment};
 use crate::locations::{self, pretty};
 use crate::setup::LOADER;
 use object::{Object, ObjectSection};
+use std::borrow::Cow;
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -129,16 +131,23 @@ fn check_lldb(r: &mut Report) -> Result<(), String> {
 
 struct Entries {
     descriptors: usize,
+    /// Type paths of the descriptors (schema-v1 §3.1), without duplicates.
+    paths: BTreeSet<String>,
     runtime: Option<String>,
     rustc_printers: bool,
 }
 
 fn entries(data: &[u8]) -> Entries {
-    let mut e = Entries { descriptors: 0, runtime: None, rustc_printers: false };
+    let mut e = Entries { descriptors: 0, paths: BTreeSet::new(), runtime: None, rustc_printers: false };
     for entry in data.split(|b| *b == 0) {
         let name = entry.split(|b| *b == b'\n').next().unwrap_or_default();
-        if name.starts_with(b"\x04debuggable-v1-") {
+        if let Some(rest) = name.strip_prefix(b"\x04debuggable-v1-") {
             e.descriptors += 1;
+            // `<path>@<crate version>`
+            let rest = String::from_utf8_lossy(rest);
+            if let Some((path, _)) = rest.rsplit_once('@') {
+                e.paths.insert(path.to_string());
+            }
         } else if let Some(v) = name.strip_prefix(b"\x04debuggable-runtime-gdb-") {
             e.runtime = Some(String::from_utf8_lossy(v).into_owned());
         } else if name.ends_with(b"gdb_load_rust_pretty_printers.py") {
@@ -198,6 +207,12 @@ fn check_binary(r: &mut Report, bin: &Path, have_gdb: bool, trusted: &[String]) 
         }
     }
 
+    if let (true, true, Some(e)) = (is_elf, has_debug_info, &found) {
+        if !e.paths.is_empty() {
+            check_type_names(r, &file, &e.paths);
+        }
+    }
+
     let has_entries = found.as_ref().is_some_and(|e| e.descriptors > 0);
     if is_elf && have_gdb && has_entries {
         let abs = bin.canonicalize().unwrap_or_else(|_| bin.to_path_buf());
@@ -214,6 +229,108 @@ fn check_binary(r: &mut Report, bin: &Path, have_gdb: bool, trusted: &[String]) 
         r.more("use `rust-gdb` to see std types (String, Vec, ...) formatted too.");
     }
     Ok(())
+}
+
+/// Debuggers match descriptors to types by their full DWARF name (schema-v1 §5). Report
+/// descriptors that match no type in the binary's debug info.
+fn check_type_names(r: &mut Report, file: &object::File, paths: &BTreeSet<String>) {
+    let Some(types) = dwarf_type_paths(file) else {
+        r.info("couldn't read the debug info (compressed or split?); skipped matching type names");
+        return;
+    };
+    if types.is_empty() {
+        r.warn("the debug info has no types (built with `debug = \"line-tables-only\"`?):");
+        r.more("debuggers can't show variables. Use `debug = true` or `debug = \"full\"`");
+        return;
+    }
+    let mut unused = Vec::new();
+    let mut matched = 0;
+    for path in paths {
+        if types.contains(path) {
+            matched += 1;
+            continue;
+        }
+        // Same crate and type name, longer path: a type defined inside a function body,
+        // whose DWARF name includes the function (`app::main::Local`) but whose descriptor
+        // path, from `module_path!()`, can't.
+        let (krate, ident) = (path.split("::").next().unwrap_or_default(), path.rsplit("::").next().unwrap_or_default());
+        let local = types.iter().find(|t| {
+            t.starts_with(&format!("{krate}::")) && t.ends_with(&format!("::{ident}")) && t.len() > path.len()
+        });
+        match local {
+            Some(t) => {
+                r.warn(format!("`{path}` is shown as `{t}` in the debug info, so debuggers won't match it."));
+                r.more("Types defined inside a function aren't supported; move it to module level.");
+            }
+            None => unused.push(path.as_str()),
+        }
+    }
+    if matched > 0 {
+        r.ok(format!("{matched} of {} described type(s) found in the debug info", paths.len()));
+    }
+    if !unused.is_empty() {
+        let shown: Vec<&str> = unused.iter().take(5).copied().collect();
+        let more = if unused.len() > shown.len() { format!(" and {} more", unused.len() - shown.len()) } else { String::new() };
+        r.info(format!("{} described type(s) not used by this binary: {}{more}", unused.len(), shown.join(", ")));
+    }
+}
+
+/// Full paths of the struct, union and enum types in the debug info, without generic
+/// arguments (`app::map::SlotMap<u8, i32>` -> `app::map::SlotMap`). None if unreadable.
+fn dwarf_type_paths(file: &object::File) -> Option<BTreeSet<String>> {
+    let endian = if file.is_little_endian() { gimli::RunTimeEndian::Little } else { gimli::RunTimeEndian::Big };
+    let mut unreadable = false;
+    let load = |id: gimli::SectionId| -> Result<Cow<[u8]>, gimli::Error> {
+        Ok(match file.section_by_name(id.name()).map(|s| s.uncompressed_data()) {
+            Some(Ok(data)) => data,
+            Some(Err(_)) => {
+                unreadable = true;
+                Cow::Borrowed(&[])
+            }
+            None => Cow::Borrowed(&[]),
+        })
+    };
+    let sections = gimli::DwarfSections::load(load).ok()?;
+    if unreadable {
+        return None;
+    }
+    let dwarf = sections.borrow(|s| gimli::EndianSlice::new(s, endian));
+    let mut out = BTreeSet::new();
+    let mut units = dwarf.units();
+    while let Ok(Some(header)) = units.next() {
+        let Ok(unit) = dwarf.unit(header) else { continue };
+        // (depth, name) of the enclosing namespaces, functions and types
+        let mut scope: Vec<(isize, Option<String>)> = Vec::new();
+        let mut depth = 0;
+        let mut entries = unit.entries();
+        while let Ok(Some((delta, entry))) = entries.next_dfs() {
+            depth += delta;
+            while scope.last().is_some_and(|(d, _)| *d >= depth) {
+                scope.pop();
+            }
+            let name = entry
+                .attr_value(gimli::DW_AT_name)
+                .ok()
+                .flatten()
+                .and_then(|v| dwarf.attr_string(&unit, v).ok())
+                .map(|s| s.to_string_lossy().into_owned());
+            let tag = entry.tag();
+            let named_scope = matches!(
+                tag,
+                gimli::DW_TAG_namespace | gimli::DW_TAG_subprogram | gimli::DW_TAG_structure_type
+                    | gimli::DW_TAG_union_type | gimli::DW_TAG_enumeration_type
+            );
+            if let (true, Some(n)) = (matches!(tag, gimli::DW_TAG_structure_type | gimli::DW_TAG_union_type | gimli::DW_TAG_enumeration_type), &name) {
+                let mut path: Vec<&str> = scope.iter().filter_map(|(_, n)| n.as_deref()).collect();
+                path.push(n.split('<').next().unwrap_or(n));
+                out.insert(path.join("::"));
+            }
+            if entry.has_children() {
+                scope.push((depth, if named_scope { name } else { None }));
+            }
+        }
+    }
+    Some(out)
 }
 
 /// Ask GDB itself (with the user's init files) whether a path is in its safe-path.
@@ -238,6 +355,7 @@ mod tests {
         let data = b"\x04debuggable-v1-a::A@1.0\nimport gdb\n\0\x04debuggable-v1-a::B@1.0\nx\n\0\x04debuggable-runtime-gdb-v1.2\nimport zlib\n\0\x01gdb_load_rust_pretty_printers.py\0";
         let e = entries(data);
         assert_eq!(e.descriptors, 2);
+        assert_eq!(e.paths.iter().map(String::as_str).collect::<Vec<_>>(), ["a::A", "a::B"]);
         assert_eq!(e.runtime.as_deref(), Some("v1.2"));
         assert!(e.rustc_printers);
     }

@@ -153,6 +153,7 @@ runtime takes over, it also takes over the printers an older one registered.
   "hide":    ["free_head", "_k"],
   "rename":  {"len": "count"},
   "items":   {"field": "slots", "len": "len"},
+  "text":    [{"field": "name", "len": "name_len"}],    // runtime minor 5 / loader 1.3
 
   // enum only:
   "variants": {
@@ -191,9 +192,22 @@ Rules:
     runtimes show `<unsupported items source>` for arrays and the wrapper for elements.
   - Children appear as the remaining visible fields first, then `[0]`, `[1]`, … in place of the
     items field.
+- **`text`** (structs only, any number of fields): each entry's `field` is resolved exactly like
+  an `items` source, and must have one-byte elements (after unwrapping transparent wrappers).
+  The runtimes read at most 1,024 bytes and show them as a string literal:
+  - UTF-8 decoded. Escapes follow Rust's `{:?}` for `str`: `\0 \t \r \n \\ \"`. Bytes that
+    aren't valid UTF-8 show as `\xNN` (lowercase).
+  - GDB builds the literal itself; other control characters are `\u{..}`, and characters the
+    host charset can't print are escaped as in §4.2. LLDB uses its own `char[n]` summary of
+    the bytes: other control characters are `\U0000001b`-style, and **trailing NUL bytes are
+    dropped**.
+  - In a summary, `{field}` inserts the literal (clipped at 64 characters). As a child, the
+    field shows the literal, unless it is hidden. A `text` field may also be hidden.
+  - Unreadable sources show `<unavailable>` / `<optimized out>` (GDB) or fall back to the raw
+    field (LLDB children). Older runtimes ignore the key and show the raw field.
 - **Enum variants:** each key is a variant name. A missing variant or an empty object means the
   default rendering. The default summary is the variant name. Children are the active variant's
-  visible fields. `items` isn't allowed in variants in v1.
+  visible fields. `items` and `text` aren't allowed in variants in v1.
 
 ### 4.1 Summary format strings (derive input → parts)
 
@@ -254,6 +268,6 @@ Known limitations, documented for users, with `doctor` reporting descriptors tha
 |---|---|
 | Descriptor entry overhead (name + 3-line body, excluding JSON) | ≤ 180 B |
 | Typical descriptor JSON | 60–250 B |
-| Runtime entry (zlib + base64) | ≤ 5 KB (4.4 KB at minor 4: comment lines blanked and docstrings reduced to `""`, line numbers preserved). |
+| Runtime entry (zlib + base64) | ≤ 5 KB (5.0 KB at minor 5: comment lines blanked and docstrings reduced to `""`, line numbers preserved). |
 
 These are measured in CI on the fixture crate, and the regression threshold is set in Phase 6.

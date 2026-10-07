@@ -20,7 +20,7 @@ linking from any crate, in any profile, including LTO, and survive `strip`.
 
 ## 2. GDB: an embedded runtime
 
-The `debuggable` crate adds one more entry to the same section: a 4 KB compressed Python runtime
+The `debuggable` crate adds one more entry to the same section: a 5 KB compressed Python runtime
 that renders the descriptions. GDB runs the scripts in that section for any binary under its
 *auto-load safe-path*, so on Linux the only setup is trusting your build directory, which
 `cargo debuggable setup` does.

@@ -1,7 +1,7 @@
 # Fixture programs for the debugger harness (tests/harness). Not part of the main
 # workspace: built by the harness with the pinned toolchain in rust-toolchain.toml.
 [workspace]
-members = ["structs", "enums", "items", "deps", "lib2021", "lib2024"]
+members = ["structs", "enums", "items", "text", "deps", "lib2021", "lib2024"]
 resolver = "2"
 
 [workspace.dependencies]

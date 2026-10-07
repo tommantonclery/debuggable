@@ -109,7 +109,7 @@ mod gdb_runtime {
     // Name must match MINOR in runtime/gdb.py; tools/gen-runtime.py --check enforces it.
     // Runs in a private namespace so nothing leaks into GDB's shared __main__.
     const TEXT: &str = concat!(
-        "\x04debuggable-runtime-gdb-v1.4\nimport zlib,base64;exec(zlib.decompress(base64.b64decode('",
+        "\x04debuggable-runtime-gdb-v1.5\nimport zlib,base64;exec(zlib.decompress(base64.b64decode('",
         include_str!("runtime/gdb.py.zb64"),
         "')),{'__name__':'debuggable_runtime'})\n\0",
     );

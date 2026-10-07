@@ -15,12 +15,13 @@ import json
 
 import lldb
 
-VERSION = "1.2"           # loader version, reported by `debuggable status`
+VERSION = "1.3"           # loader version, reported by `debuggable status`
 CATEGORY = "debuggable"
 SECTION_NAMES = (".debug_gdb_scripts", "__debuggable")
 ENTRY_PREFIX = b"\x04debuggable-v1-"
 SUMMARY_MAX = 64
 ITEMS_MAX = 10000
+TEXT_MAX = 1024           # bytes read for a text field
 
 _by_module = {}           # module key -> ({exact path: desc}, {generic path: desc})
 _by_type = {}             # type name -> desc or None (cache, cleared with modules)
@@ -163,7 +164,10 @@ def _render(v):
         s = v.GetValue()
     if not s:
         return "<unavailable>" if v.GetError().Fail() else "{...}"
-    s = " ".join(s.split())
+    return _clip(" ".join(s.split()))
+
+
+def _clip(s):
     return s if len(s) <= SUMMARY_MAX else s[:SUMMARY_MAX - 1] + "…"
 
 
@@ -194,10 +198,12 @@ def _unwrap_transparent(elem):
     return elem
 
 
-def _items(parent, node, spec):
+def _source(node, spec):
+    """(address of the first element, element type, count) for an `items` or `text` field
+    (schema §4), or None if it can't be resolved."""
     src = _field(node, spec["field"])
     if src is None:
-        return []
+        return None
     t = src.GetType()
     lf = _field(node, spec["len"]) if spec.get("len") else None
     if (t.GetName() or "").startswith("alloc::vec::Vec<"):
@@ -210,7 +216,7 @@ def _items(parent, node, spec):
         elem = t.GetArrayElementType()
         base = src.GetLoadAddress()
         if base == lldb.LLDB_INVALID_ADDRESS or elem.GetByteSize() == 0:
-            return []
+            return None
         n = t.GetByteSize() // elem.GetByteSize()
         if lf is not None:
             n = min(n, lf.GetValueAsUnsigned())
@@ -218,14 +224,50 @@ def _items(parent, node, spec):
         ptr = src if t.IsPointerType() else _first_ptr(src)  # *T or NonNull<T>
         elem = ptr.GetType().GetPointeeType()
         if lf is None:
-            return []
+            return None
         base, n = ptr.GetValueAsUnsigned(), lf.GetValueAsUnsigned()
     elem = _unwrap_transparent(elem)
     if not elem.IsValid() or elem.GetByteSize() == 0:
+        return None
+    return base, elem, n
+
+
+def _items(parent, node, spec):
+    src = _source(node, spec)
+    if src is None:
         return []
+    base, elem, n = src
     size = elem.GetByteSize()
     return [parent.CreateValueFromAddress("[%d]" % i, base + i * size, elem)
             for i in range(min(n, ITEMS_MAX))]
+
+
+def _text(parent, node, spec, name):
+    """A `text` field as (a `char[n]` value holding its first TEXT_MAX bytes, whether more
+    were cut off), or None if it can't be read. LLDB's own summary for the value is a
+    Rust-like literal, `"h\\xffi \\"\\n"`, except that it drops trailing NUL bytes."""
+    src = _source(node, spec)
+    if src is None or src[1].GetByteSize() != 1:
+        return None
+    base, _, n = src
+    k = min(n, TEXT_MAX)
+    target = parent.GetTarget()
+    err = lldb.SBError()
+    raw = parent.GetProcess().ReadMemory(base, k, err) if k else b"\0"  # char[0] has no summary
+    if not err.Success():
+        return None
+    data = lldb.SBData()
+    data.SetData(err, raw, target.GetByteOrder(), target.GetAddressByteSize())
+    char_n = target.GetBasicType(lldb.eBasicTypeChar).GetArrayType(len(raw))
+    return parent.CreateValueFromData(name, data, char_n), n > k
+
+
+def _text_summary(parent, node, spec):
+    t = _text(parent, node, spec, "text")
+    s = t[0].GetSummary() if t is not None else None
+    if not s:
+        return "<unavailable>"
+    return _clip(s + "…" if t[1] else s)
 
 
 # ---- Providers --------------------------------------------------------------------------
@@ -261,7 +303,13 @@ def summary(valobj, _internal_dict):
             # No summary: LLDB shows the children; if there are none, say so explicitly.
             # Return "" (not None) for "no summary": LLDB 20 prints a returned None as "None".
             return "{}" if valobj.GetNumChildren() == 0 else ""
-        return "".join(t if k == "lit" else _render(_field(node, t)) for k, t in parts)
+        texts = {x["field"]: x for x in vd.get("text", ())}
+        return "".join(
+            t if k == "lit"
+            else _text_summary(raw, node, texts[t]) if t in texts
+            else _render(_field(node, t))
+            for k, t in parts
+        )
     except Exception as e:  # last resort: never break the variables view
         return "<debuggable: %s>" % e
 
@@ -286,6 +334,7 @@ class Synth:
             items = vd.get("items")
             if items:
                 hide.add(items["field"])
+            texts = {x["field"]: x for x in vd.get("text", ())}
             for i in range(node.GetNumChildren()):
                 c = node.GetChildAtIndex(i)
                 n = c.GetName() or ""
@@ -295,6 +344,11 @@ class Synth:
                 if src in hide:
                     continue
                 label = rename.get(src, src)
+                if src in texts:
+                    t = _text(self.valobj, node, texts[src], label)
+                    if t is not None:  # else fall back to the raw field
+                        self.kids.append(t[0])
+                        continue
                 self.kids.append(c.Clone(label) if label != n else c)
             if items:
                 self.kids.extend(_items(self.valobj, node, items))
