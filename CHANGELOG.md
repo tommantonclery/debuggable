@@ -3,7 +3,7 @@
 All three crates (`debuggable`, `debuggable-derive`, `cargo-debuggable`) are released together
 with the same version. This project follows [Semantic Versioning](https://semver.org).
 
-## Unreleased
+## 0.1.2 — 2026-10-07
 
 ### `debuggable`
 

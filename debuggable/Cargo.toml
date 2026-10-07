@@ -13,7 +13,7 @@ categories = ["development-tools::debugging", "no-std"]
 
 [dependencies]
 # Pinned exactly: the derive's output uses this crate's private macros (schema-v1).
-debuggable-derive = { version = "=0.1.1", path = "../debuggable-derive" }
+debuggable-derive = { version = "=0.1.2", path = "../debuggable-derive" }
 
 [lints]
 workspace = true
