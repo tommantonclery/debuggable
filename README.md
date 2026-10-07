@@ -154,6 +154,8 @@ What it costs them:
 | `rename = "..."` | field | Show the field under another name. |
 | `items` | field | Show the field's elements in place of the field: a `Vec<T>`, an array `[T; N]`, or a `*const T`, `*mut T` or `NonNull<T>` together with `len`. `MaybeUninit<T>` elements are shown as `T`. |
 | `text` | field | Show the field's bytes as a string, `"hello"`: a `[u8; N]`, `Vec<u8>` or byte pointer, with `len` as for `items`. Invalid UTF-8 shows as `\xNN`. |
+| `only = "..."` | with `items` | Keep only some elements: a variant name (`"Occupied"`), or a field that is non-zero, optionally masked (`"version & 1"`). For slab-, arena- and slot-map-style collections. |
+| `value = "path"` | with `items` | Show this field of each element instead of the whole element (`"0"`, `"u.value"`). |
 | `len = "field"` | with `items` or `text` | The number of elements to show: for a `Vec` or array, at most this many; for a pointer, required. |
 
 Full reference: [docs.rs/debuggable](https://docs.rs/debuggable).

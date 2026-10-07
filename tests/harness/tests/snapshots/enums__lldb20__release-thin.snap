@@ -49,3 +49,9 @@ source: tests/harness/tests/debuggers.rs
 }
 ## by_ref
 (fx_enums::Token *) f->by_ref = 0x<addr> Num(-1)
+## msg
+(fx_enums::Msg<u32>) f->msg = data 5 {
+  0 = 5
+}
+## closed
+(fx_enums::Msg<u32>) f->closed = closed

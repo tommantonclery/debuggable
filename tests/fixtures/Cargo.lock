@@ -41,6 +41,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "fx-slots"
+version = "0.1.0"
+dependencies = [
+ "debuggable",
+]
+
+[[package]]
 name = "fx-structs"
 version = "0.1.0"
 dependencies = [

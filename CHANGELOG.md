@@ -3,6 +3,26 @@
 All three crates (`debuggable`, `debuggable-derive`, `cargo-debuggable`) are released together
 with the same version. This project follows [Semantic Versioning](https://semver.org).
 
+## Unreleased
+
+### `debuggable`
+
+- `items` takes two new options for slot collections (slab-, arena- and slot-map-style types):
+  `only = "Occupied"` or `only = "version & 1"` keeps matching elements, and `value = "path"`
+  shows a field of each instead of the whole slot. Kept elements keep their index. GDB
+  runtime 1.6.
+
+### `cargo-debuggable`
+
+- LLDB loader 1.4: supports `only` and `value`. Run `cargo debuggable setup` again after
+  upgrading.
+- Fixed: in LLDB, variant summaries on generic enums (`enum Msg<T>`) were never used; the
+  variant showed as `Data<unsigned int>`.
+
+### `debuggable-derive`
+
+- "Did you mean" suggestions now also catch two swapped letters (`onyl` → `only`).
+
 ## 0.1.1 — 2026-10-07
 
 ### `debuggable`

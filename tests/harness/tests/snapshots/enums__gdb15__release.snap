@@ -29,3 +29,9 @@ $6 = [X = {
   }, Z]
 ## by_ref
 $7 = (*mut fx_enums::Token) 0x<addr>
+## msg
+$8 = data 5 = {
+  0 = 5
+}
+## closed
+$9 = closed

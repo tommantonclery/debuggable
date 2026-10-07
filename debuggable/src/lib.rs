@@ -120,6 +120,50 @@
 //!
 //! At most 10,000 elements are shown.
 //!
+//! ## `only` and `value`: slot collections
+//!
+//! Options for `items` on collections whose slots may be vacant, such as slab, arena or slot
+//! map types. `only` keeps the elements that match, and `value` shows a field of each kept
+//! element instead of the whole slot. Kept elements keep their index as their label, so
+//! `[3]` is still slot 3.
+//!
+//! - `only = "Variant"`: elements that are enums, in that variant.
+//! - `only = "field"` or `only = "field & mask"`: elements whose integer or `bool` field is
+//!   non-zero, or has a bit of `mask` set. The path may go through fields: `"meta.flags & 0x4"`.
+//! - `value = "path"`: a field of the element, or of the variant chosen by `only`; through
+//!   unions too. `MaybeUninit` and `ManuallyDrop` are unwrapped.
+//!
+//! ```
+//! # use debuggable::Debuggable;
+//! # use std::mem::ManuallyDrop;
+//! enum Entry<T> { Vacant(usize), Occupied(T) }
+//!
+//! #[derive(Debuggable)]
+//! #[debuggable(summary = "{len} items")]
+//! pub struct Slab<T> {
+//!     #[debuggable(items, only = "Occupied", value = "0")]
+//!     entries: Vec<Entry<T>>,
+//!     #[debuggable(hide)]
+//!     len: usize,
+//! }
+//!
+//! union SlotUnion<T> { value: ManuallyDrop<T>, next_free: u32 }
+//! struct Slot<T> { u: SlotUnion<T>, version: u32 } // odd version = occupied
+//!
+//! #[derive(Debuggable)]
+//! #[debuggable(summary = "{num_elems} items")]
+//! pub struct SlotMap<V> {
+//!     #[debuggable(items, only = "version & 1", value = "u.value")]
+//!     slots: Vec<Slot<V>>,
+//!     #[debuggable(hide)]
+//!     num_elems: u32,
+//! }
+//! ```
+//!
+//! A slab holding "a" in slot 1 and "d" in slot 3 then shows as
+//! `2 items = {[1] = "a", [3] = "d"}`. Names inside the element type can't be checked at
+//! compile time; a misspelled variant shows `<only: no variant ...>` in the debugger.
+//!
 //! ## `text`: show bytes as a string
 //!
 //! On any number of fields. The field's bytes are shown as a string literal, as UTF-8:

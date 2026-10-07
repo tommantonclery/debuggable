@@ -8,6 +8,12 @@ pub(crate) enum Part {
     Field(String),
 }
 
+/// `only = "path & mask"` on an `items` field (design 0002 §2.1).
+pub(crate) struct Only {
+    pub path: Vec<String>,
+    pub mask: Option<u64>,
+}
+
 pub(crate) struct Field {
     /// Source name without `r#`; tuple fields are "0", "1", ...
     pub name: String,
@@ -17,6 +23,9 @@ pub(crate) struct Field {
     pub items: bool,
     /// `#[debuggable(text)]`: shown as a string (with `len`, at most that many bytes).
     pub text: bool,
+    pub only: Option<Only>,
+    /// `value = "a.b"`: show this path of each kept element.
+    pub value: Option<Vec<String>>,
     pub len: Option<(String, Span)>,
 }
 
@@ -103,8 +112,29 @@ fn members(summary: Option<&[Part]>, fields: &[Field], out: &mut String) {
         out.push('}');
     }
     if let Some(f) = fields.iter().find(|f| f.items) {
-        out.push_str(",\"items\":");
-        source(f, out);
+        if f.only.is_none() && f.value.is_none() {
+            out.push_str(",\"items\":");
+            source(f, out);
+        } else {
+            // A new key, so runtimes that predate it ignore it rather than show vacant
+            // slots as values (design 0002 §4).
+            out.push_str(",\"slots\":");
+            source(f, out);
+            out.pop(); // reopen the object
+            if let Some(only) = &f.only {
+                out.push_str(",\"only\":{\"path\":");
+                list(&only.path, out, |s, out| json_str(s, out));
+                if let Some(mask) = only.mask {
+                    out.push_str(&format!(",\"mask\":{mask}"));
+                }
+                out.push('}');
+            }
+            if let Some(value) = &f.value {
+                out.push_str(",\"value\":");
+                list(value, out, |s, out| json_str(s, out));
+            }
+            out.push('}');
+        }
     }
     let texts: Vec<&Field> = fields.iter().filter(|f| f.text).collect();
     if !texts.is_empty() {

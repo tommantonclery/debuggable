@@ -52,7 +52,8 @@ mask  := decimal integer | "0x" hex integer   (1 ..= 2^53 - 1, see §4)
 Whitespace around `&` is allowed. The runtime evaluates it per element:
 
 - **Single segment, no mask, element is an enum:** keep the element if its active variant is
-  named `segment`.
+  named `segment`. If the enum type has no variant of that name, nothing is kept and one
+  child `[..] = <only: no variant `X`>` says so (so a typo can't look like an empty collection).
 - **Otherwise:** follow `path` through the element's fields (unions included; transparent
   wrappers unwrapped after each step) to an integer or bool. Keep the element if the value is
   non-zero, or, with a mask, if `value & mask != 0`.

@@ -153,6 +153,8 @@ runtime takes over, it also takes over the printers an older one registered.
   "hide":    ["free_head", "_k"],
   "rename":  {"len": "count"},
   "items":   {"field": "slots", "len": "len"},
+  // or, with `only` / `value` (runtime minor 6 / loader 1.4; never together with "items"):
+  "slots":   {"field": "slots", "len": "len", "only": {"path": ["version"], "mask": 1}, "value": ["u", "value"]},
   "text":    [{"field": "name", "len": "name_len"}],    // runtime minor 5 / loader 1.3
 
   // enum only:
@@ -205,6 +207,20 @@ Rules:
     field shows the literal, unless it is hidden. A `text` field may also be hidden.
   - Unreadable sources show `<unavailable>` / `<optimized out>` (GDB) or fall back to the raw
     field (LLDB children). Older runtimes ignore the key and show the raw field.
+- **`slots`** (runtime minor 6 / loader 1.4): an `items` field with per-element filtering and
+  projection, from `#[debuggable(items, only = "...", value = "...")]`. Design and rationale:
+  `docs/design/0002-slot-items.md`. Same source, `len` and limit rules as `items`, plus:
+  - `only` (optional): `path` (field names; `"0"` is DWARF `__0`) and optional `mask`
+    (1 ..= 2^53 - 1). A single segment without a mask, on enum elements, compares the active
+    variant's name; a name that isn't one of the enum's variants shows one
+    `[..] = <only: no variant `X`>` child and nothing else. Otherwise the path is followed to an
+    integer or bool and the element is kept if it (masked) is non-zero; the first element whose
+    path can't be followed adds one `[..] = <only: no field `a.b`>` child.
+  - `value` (optional): a path from the element, or from the variant `only` chose. Unions and
+    transparent wrappers are followed. A failed path shows `<unavailable>` for that element.
+  - Kept elements are labelled with their original index.
+  - Why a separate key: an older runtime would show `items` with vacant slots as live values,
+    which §7 counts as a misrender; it ignores `slots` and shows the plain field instead.
 - **Enum variants:** each key is a variant name. A missing variant or an empty object means the
   default rendering. The default summary is the variant name. Children are the active variant's
   visible fields. `items` and `text` aren't allowed in variants in v1.
@@ -268,6 +284,6 @@ Known limitations, documented for users, with `doctor` reporting descriptors tha
 |---|---|
 | Descriptor entry overhead (name + 3-line body, excluding JSON) | ≤ 180 B |
 | Typical descriptor JSON | 60–250 B |
-| Runtime entry (zlib + base64) | ≤ 5 KB (5.0 KB at minor 5: comment lines blanked and docstrings reduced to `""`, line numbers preserved). |
+| Runtime entry (zlib + base64) | ≤ 6 KB (5.8 KB at minor 6; raised from 5 KB for `slots`: comment lines blanked and docstrings reduced to `""`, line numbers preserved). |
 
 These are measured in CI on the fixture crate, and the regression threshold is set in Phase 6.

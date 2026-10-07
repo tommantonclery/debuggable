@@ -38,7 +38,7 @@ fn structs() {
 
 #[test]
 fn enums() {
-    check("enums", &["ident", "num", "eof", "tokens", "glyphs", "tagged", "by_ref"]);
+    check("enums", &["ident", "num", "eof", "tokens", "glyphs", "tagged", "by_ref", "msg", "closed"]);
 }
 
 #[test]
@@ -49,6 +49,11 @@ fn items() {
 #[test]
 fn text() {
     check("text", &["name", "empty", "tag", "buf", "raw", "long"]);
+}
+
+#[test]
+fn slots() {
+    check("slots", &["slab", "arena", "slotmap", "flagged", "typo", "all_vacant", "empty", "live", "wrapped", "nonscalar", "typo_field", "dangling", "dangling_rows"]);
 }
 
 #[test]

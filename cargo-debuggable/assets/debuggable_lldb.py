@@ -15,7 +15,7 @@ import json
 
 import lldb
 
-VERSION = "1.3"           # loader version, reported by `debuggable status`
+VERSION = "1.4"           # loader version, reported by `debuggable status`
 CATEGORY = "debuggable"
 SECTION_NAMES = (".debug_gdb_scripts", "__debuggable")
 ENTRY_PREFIX = b"\x04debuggable-v1-"
@@ -120,6 +120,20 @@ def _field(node, src_name):
     return None
 
 
+def _variant_name(type_name):
+    """`a::Msg<u32>::Data<u32>` -> `Data`. LLDB names variant types with the enum's generic
+    arguments appended, which may themselves contain `::`."""
+    name = type_name or ""
+    if name.endswith(">"):
+        depth = 0
+        for i in range(len(name) - 1, -1, -1):
+            depth += {">": 1, "<": -1}.get(name[i], 0)
+            if depth == 0:
+                name = name[:i]
+                break
+    return name.rsplit("::", 1)[-1]
+
+
 def _active_variant(valobj):
     """(variant value, variant name) for LLDB's clang-style encoding:
     $variants$ -> $variant$<discr> { $discr$, value }. LLDB <= 20 truncates <discr> in the
@@ -143,7 +157,7 @@ def _active_variant(valobj):
     if chosen is None:
         raise ValueError("cannot resolve active variant")
     value = chosen.GetChildMemberWithName("value")
-    return value, value.GetType().GetName().rsplit("::", 1)[-1]
+    return value, _variant_name(value.GetType().GetName())
 
 
 def _render(v):
@@ -242,6 +256,105 @@ def _items(parent, node, spec):
             for i in range(min(n, ITEMS_MAX))]
 
 
+def _path(v, segments):
+    """Follow field names from `v` (design 0002 §2.2), through unions and transparent
+    wrappers. None if a step fails."""
+    for seg in segments:
+        v = _field(v.GetNonSyntheticValue(), seg)
+        if v is None:
+            return None
+        t = v.GetType()
+        inner = _unwrap_transparent(t)
+        if inner.GetName() != t.GetName():
+            addr = v.GetLoadAddress()
+            if addr == lldb.LLDB_INVALID_ADDRESS:
+                return None
+            v = v.CreateValueFromAddress(v.GetName() or "v", addr, inner)
+    return v
+
+
+def _variant_names(el):
+    """Variant names of an enum element (all of them, active or not), or None if `el` is
+    not an enum."""
+    variants = el.GetNonSyntheticValue().GetChildMemberWithName("$variants$")
+    if not variants.IsValid():
+        return None
+    names = []
+    for i in range(variants.GetNumChildren()):
+        value = variants.GetChildAtIndex(i).GetChildMemberWithName("value")
+        names.append(_variant_name(value.GetType().GetName()))
+    return names
+
+
+def _keep(el, only):
+    """(keep the element?, where `value` paths start), per design 0002 §2.1. Raises
+    ValueError with the message to show when the `only` path can't be followed."""
+    path, mask = only["path"], only.get("mask")
+    if len(path) == 1 and mask is None and _variant_names(el) is not None:
+        variant, name = _active_variant(el.GetNonSyntheticValue())  # an enum
+        return name == path[0], variant
+    v = _path(el, path)
+    if v is None or not v.IsValid() or v.GetError().Fail():
+        raise ValueError("<only: no field `%s`>" % ".".join(path))
+    if not v.GetType().GetTypeFlags() & lldb.eTypeIsScalar:
+        raise ValueError("<only: `%s` is not an integer>" % ".".join(path))
+    n = v.GetValueAsUnsigned()  # 64-bit
+    return (n & mask if mask else n) != 0, el
+
+
+def _message(parent, name, text):
+    """A child that shows `text` (as a quoted string: LLDB has no other way to show text)."""
+    target = parent.GetTarget()
+    data = lldb.SBData()
+    raw = text.encode("utf-8")
+    data.SetData(lldb.SBError(), raw, target.GetByteOrder(), target.GetAddressByteSize())
+    char_n = target.GetBasicType(lldb.eBasicTypeChar).GetArrayType(len(raw))
+    return parent.CreateValueFromData(name, data, char_n)
+
+
+def _slots(parent, node, spec):
+    """Children for a `slots` field: `items` with `only` / `value` (design 0002)."""
+    src = _source(node, spec)
+    if src is None:
+        return []
+    base, elem, n = src
+    size = elem.GetByteSize()
+    only, value = spec.get("only"), spec.get("value")
+    kids = []
+    process = parent.GetProcess()
+    for i in range(min(n, ITEMS_MAX)):
+        el = parent.CreateValueFromAddress("[%d]" % i, base + i * size, elem)
+        start = el
+        err = lldb.SBError()
+        process.ReadMemory(base + i * size, min(size, 8), err)
+        if not err.Success():  # as in GDB: say so, never drop it or blame a field
+            kids.append(_message(parent, "[%d]" % i, "<unavailable>"))
+            continue
+        if only:
+            if i == 0 and len(only["path"]) == 1 and "mask" not in only:
+                names = _variant_names(el)
+                if names is not None and only["path"][0] not in names:
+                    return [_message(parent, "[..]", "<only: no variant `%s`>" % only["path"][0])]
+            try:
+                keep, start = _keep(el, only)
+            except ValueError as e:
+                if not any(k.GetName() == "[..]" for k in kids):
+                    kids.append(_message(parent, "[..]", str(e)))
+                continue
+            if not keep:
+                continue
+        if value is None:
+            kids.append(el)
+            continue
+        v = _path(start, value)
+        addr = v.GetLoadAddress() if v is not None else lldb.LLDB_INVALID_ADDRESS
+        if addr == lldb.LLDB_INVALID_ADDRESS:
+            kids.append(_message(parent, "[%d]" % i, "<unavailable>"))
+        else:
+            kids.append(parent.CreateValueFromAddress("[%d]" % i, addr, v.GetType()))
+    return kids
+
+
 def _text(parent, node, spec, name):
     """A `text` field as (a `char[n]` value holding its first TEXT_MAX bytes, whether more
     were cut off), or None if it can't be read. LLDB's own summary for the value is a
@@ -332,8 +445,10 @@ class Synth:
             hide = set(vd.get("hide", ()))
             rename = vd.get("rename", {})
             items = vd.get("items")
-            if items:
-                hide.add(items["field"])
+            slots = vd.get("slots")
+            for spec in (items, slots):
+                if spec:
+                    hide.add(spec["field"])
             texts = {x["field"]: x for x in vd.get("text", ())}
             for i in range(node.GetNumChildren()):
                 c = node.GetChildAtIndex(i)
@@ -352,6 +467,8 @@ class Synth:
                 self.kids.append(c.Clone(label) if label != n else c)
             if items:
                 self.kids.extend(_items(self.valobj, node, items))
+            elif slots:
+                self.kids.extend(_slots(self.valobj, node, slots))
         except Exception:
             pass  # keep whatever children were collected
         return False

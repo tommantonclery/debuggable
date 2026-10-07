@@ -11,8 +11,9 @@ fn contains(hay: &[u8], needle: &str) -> bool {
 /// dependency crates and from a pure-data type with no functions.
 const EXPECTED: &[(&str, &[&str])] = &[
     ("structs", &["fx_structs::geo::Point@0.1.0", "fx_structs::Meters@", "fx_structs::Account@", "fx_structs::Trip@"]),
-    ("enums", &["fx_enums::Token@", "fx_enums::Glyph@", "fx_enums::Tagged@"]),
+    ("enums", &["fx_enums::Token@", "fx_enums::Glyph@", "fx_enums::Tagged@", "fx_enums::Msg@"]),
     ("items", &["fx_items::Slot@", "fx_items::SlotMap@", "fx_items::Stack@", "fx_items::RawBuf@"]),
+    ("slots", &["fx_slots::Slab@", "fx_slots::Arena@", "fx_slots::SlotMap@"]),
     ("text", &["fx_text::InlineStr@", "fx_text::Tag@", "fx_text::Buf@", "fx_text::RawText@"]),
     ("deps", &["lib2021::Celsius@0.3.1", "lib2021::Pair@0.3.1", "lib2024::Flag@0.3.1"]),
 ];

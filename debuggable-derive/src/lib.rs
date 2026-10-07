@@ -7,7 +7,7 @@
 
 mod emit;
 
-use emit::{Body, Field, Part, Ty, Variant};
+use emit::{Body, Field, Only, Part, Ty, Variant};
 use proc_macro::TokenStream;
 use proc_macro2::Span;
 use syn::ext::IdentExt;
@@ -49,6 +49,8 @@ struct Opts {
     items: Option<Span>,
     text: Option<Span>,
     len: Option<LitStr>,
+    only: Option<LitStr>,
+    value: Option<LitStr>,
 }
 
 fn opts(attrs: &[Attribute], place: Place) -> Result<Opts> {
@@ -60,12 +62,12 @@ fn opts(attrs: &[Attribute], place: Place) -> Result<Opts> {
             let allowed = match key.as_str() {
                 "summary" => matches!(place, Place::Struct | Place::Variant),
                 "hide" | "rename" => matches!(place, Place::StructField | Place::VariantField),
-                "items" | "text" | "len" => place == Place::StructField,
+                "items" | "text" | "len" | "only" | "value" => place == Place::StructField,
                 _ => {
-                    const OPTIONS: [&str; 6] = ["summary", "hide", "rename", "items", "text", "len"];
+                    const OPTIONS: [&str; 8] = ["summary", "hide", "rename", "items", "text", "len", "only", "value"];
                     return Err(m.error(match closest(&key, OPTIONS) {
                         Some(best) => format!("unknown `debuggable` option `{key}`; did you mean `{best}`?"),
-                        None => "unknown `debuggable` option; expected one of: `summary`, `hide`, `rename`, `items`, `text`, `len`"
+                        None => "unknown `debuggable` option; expected one of: `summary`, `hide`, `rename`, `items`, `text`, `len`, `only`, `value`"
                             .to_string(),
                     }));
                 }
@@ -93,6 +95,8 @@ fn opts(attrs: &[Attribute], place: Place) -> Result<Opts> {
                 "summary" => value(&m, &mut o.summary),
                 "rename" => value(&m, &mut o.rename),
                 "len" => value(&m, &mut o.len),
+                "only" => value(&m, &mut o.only),
+                "value" => value(&m, &mut o.value),
                 "hide" => flag(&m, &mut o.hide),
                 "text" => flag(&m, &mut o.text),
                 _ => flag(&m, &mut o.items),
@@ -108,7 +112,7 @@ fn misplaced(key: &str, place: Place) -> String {
             "`summary` on an enum goes on each variant: `#[debuggable(summary = \"...\")]` above the variant".into()
         }
         ("summary", _) => "`summary` is allowed on a struct or an enum variant, not on a field".into(),
-        ("items" | "text" | "len", Place::VariantField) => format!("`{key}` is not supported inside enum variants"),
+        ("items" | "text" | "len" | "only" | "value", Place::VariantField) => format!("`{key}` is not supported inside enum variants"),
         (_, Place::Struct | Place::Enum | Place::Variant) => format!("`{key}` is allowed on fields only"),
         _ => format!("`{key}` is not allowed here"),
     }
@@ -135,6 +139,11 @@ fn fields(fields: &Fields, place: Place) -> Result<Vec<Field>> {
         if let (Some(_), Some(text)) = (o.items, o.text) {
             return Err(Error::new(text, "a field can't have both `items` and `text`"));
         }
+        for (lit, key) in [(&o.only, "only"), (&o.value, "value")] {
+            if let (Some(lit), None) = (lit, o.items) {
+                return Err(Error::new(lit.span(), format!("`{key}` needs `items` on the same field")));
+            }
+        }
         if let (Some(len), None, None) = (&o.len, o.items, o.text) {
             return Err(Error::new(len.span(), "`len` needs `items` or `text` on the same field"));
         }
@@ -155,6 +164,8 @@ fn fields(fields: &Fields, place: Place) -> Result<Vec<Field>> {
             rename: o.rename.map(|r| r.value()),
             items: o.items.is_some(),
             text: o.text.is_some(),
+            only: o.only.as_ref().map(parse_only).transpose()?,
+            value: o.value.as_ref().map(|v| parse_path(v, "value")).transpose()?,
             len: o.len.map(|l| (l.value(), l.span())),
         });
     }
@@ -168,22 +179,86 @@ fn fields(fields: &Fields, place: Place) -> Result<Vec<Field>> {
     Ok(out)
 }
 
+/// `a.b.0`: field names (or tuple indices) separated by dots (design 0002 §2.1).
+fn parse_path(lit: &LitStr, what: &str) -> Result<Vec<String>> {
+    parse_path_str(&lit.value(), lit, what)
+}
+
+fn parse_path_str(s: &str, lit: &LitStr, what: &str) -> Result<Vec<String>> {
+    let err = |msg: String| Error::new(lit.span(), msg);
+    if s.trim().is_empty() {
+        return Err(err(format!("`{what}` expects a field or variant name, like `\"value\"` or `\"u.value\"`")));
+    }
+    let mut out = Vec::new();
+    for seg in s.split('.') {
+        let seg = seg.trim();
+        if seg.is_empty() {
+            return Err(err(format!("empty segment in `{what}` path `{s}`")));
+        }
+        if let Some((first, rest)) = seg.split_once(char::is_whitespace) {
+            let _ = first;
+            return Err(err(format!("unexpected `{}` in `{what}`", rest.trim())));
+        }
+        let seg = seg.strip_prefix("r#").unwrap_or(seg);
+        let is_ident = syn::parse::Parser::parse_str(syn::Ident::parse_any, seg).is_ok();
+        if !(is_ident || seg.bytes().all(|b| b.is_ascii_digit())) {
+            return Err(err(format!("`{seg}` in `{what}` is not a field name")));
+        }
+        out.push(seg.to_string());
+    }
+    Ok(out)
+}
+
+/// `path` or `path & mask` (design 0002 §2.1).
+fn parse_only(lit: &LitStr) -> Result<Only> {
+    let s = lit.value();
+    let err = |msg: String| Error::new(lit.span(), msg);
+    let (path, mask) = match s.split_once('&') {
+        None => (s.as_str(), None),
+        Some((path, mask)) => {
+            let mask = mask.trim();
+            if mask.is_empty() {
+                return Err(err("`only` expects a mask after `&`, like `\"version & 1\"`".into()));
+            }
+            let parsed = match mask.strip_prefix("0x").or_else(|| mask.strip_prefix("0X")) {
+                Some(hex) => u64::from_str_radix(&hex.replace('_', ""), 16),
+                None => mask.replace('_', "").parse::<u64>(),
+            };
+            let n = parsed.map_err(|_| err(format!("`only` mask `{mask}` is not an integer")))?;
+            if n == 0 {
+                return Err(err("`only` mask must be non-zero".into()));
+            }
+            if n > (1 << 53) - 1 {
+                return Err(err("`only` mask must be at most 2^53 - 1".into()));
+            }
+            (path, Some(n))
+        }
+    };
+    if path.trim().is_empty() {
+        return Err(err("`only` expects a field or variant name, optionally `& mask`: `\"version & 1\"`".into()));
+    }
+    Ok(Only { path: parse_path_str(path, lit, "only")?, mask })
+}
+
 /// The closest candidate for a "did you mean" hint. Like rustc, allow an edit distance of
 /// at most a third of the name's length, and never suggest a name with nothing in common.
 fn closest<'a>(name: &str, candidates: impl IntoIterator<Item = &'a str>) -> Option<&'a str> {
+    /// Edit distance where swapping two adjacent characters counts as one edit, as in rustc
+    /// (optimal string alignment).
     fn distance(a: &str, b: &str) -> usize {
-        let b: Vec<char> = b.chars().collect();
-        let mut row: Vec<usize> = (0..=b.len()).collect();
-        for (i, ca) in a.chars().enumerate() {
-            let mut prev = row[0];
-            row[0] = i + 1;
-            for j in 0..b.len() {
-                let cur = row[j + 1];
-                row[j + 1] = (prev + usize::from(ca != b[j])).min(row[j] + 1).min(cur + 1);
-                prev = cur;
+        let (a, b): (Vec<char>, Vec<char>) = (a.chars().collect(), b.chars().collect());
+        let mut d: Vec<Vec<usize>> = (0..=a.len()).map(|i| vec![i; b.len() + 1]).collect();
+        d[0] = (0..=b.len()).collect();
+        for i in 1..=a.len() {
+            for j in 1..=b.len() {
+                let cost = usize::from(a[i - 1] != b[j - 1]);
+                d[i][j] = (d[i - 1][j - 1] + cost).min(d[i - 1][j] + 1).min(d[i][j - 1] + 1);
+                if i > 1 && j > 1 && a[i - 1] == b[j - 2] && a[i - 2] == b[j - 1] {
+                    d[i][j] = d[i][j].min(d[i - 2][j - 2] + 1);
+                }
             }
         }
-        row[b.len()]
+        d[a.len()][b.len()]
     }
     let limit = (name.chars().count() / 3).max(1);
     candidates
@@ -340,6 +415,26 @@ mod tests {
     }
 
     #[test]
+    fn slots_fields() {
+        assert_eq!(
+            json(r#"#[debuggable(summary = "{len} items")] struct S<T> {
+                #[debuggable(items, len = "n", only = "version & 0x1", value = "u.r#value")] slots: Vec<T>,
+                n: usize, len: u32,
+            }"#),
+            r#""generic":true,"kind":"struct","summary":[["field","len"],["lit"," items"]],"slots":{"field":"slots","len":"n","only":{"path":["version"],"mask":1},"value":["u","value"]}}"#
+        );
+        assert_eq!(
+            json(r#"struct S { #[debuggable(items, only = "Occupied", value = "0")] e: Vec<u8> }"#),
+            r#""generic":false,"kind":"struct","slots":{"field":"e","only":{"path":["Occupied"]},"value":["0"]}}"#
+        );
+        assert_eq!(
+            // plain items: unchanged
+            json(r#"struct S { #[debuggable(items)] e: Vec<u8> }"#),
+            r#""generic":false,"kind":"struct","items":{"field":"e"}}"#
+        );
+    }
+
+    #[test]
     fn enum_variants_and_defaults() {
         assert_eq!(
             json(r#"enum Token { #[debuggable(summary = "Ident({name})")] Ident { name: String }, #[debuggable(summary = "Num({0})")] Num(i64), Eof }"#),
@@ -397,6 +492,17 @@ mod tests {
             (r#"struct S { #[debuggable(rename = 3)] a: u8 }"#, "expected `rename = \"...\"`"),
             (r#"struct S { #[debuggable(rename = "")] a: u8 }"#, "non-empty"),
             (r#"union U { a: u8 }"#, "can't be derived for unions"),
+            (r#"struct S { #[debuggable(only = "x")] v: Vec<u8> }"#, "`only` needs `items`"),
+            (r#"struct S { #[debuggable(value = "x")] v: Vec<u8> }"#, "`value` needs `items`"),
+            (r#"struct S { #[debuggable(items, only = "")] v: Vec<u8> }"#, "`only` expects a field or variant name"),
+            (r#"struct S { #[debuggable(items, only = "a..b")] v: Vec<u8> }"#, "empty segment"),
+            (r#"struct S { #[debuggable(items, only = "a & 0")] v: Vec<u8> }"#, "mask must be non-zero"),
+            (r#"struct S { #[debuggable(items, only = "a & 9007199254740992")] v: Vec<u8> }"#, "at most 2^53 - 1"),
+            (r#"struct S { #[debuggable(items, only = "a &")] v: Vec<u8> }"#, "expects a mask"),
+            (r#"struct S { #[debuggable(items, only = "a b")] v: Vec<u8> }"#, "unexpected `b`"),
+            (r#"struct S { #[debuggable(items, value = "a.-b")] v: Vec<u8> }"#, "not a field name"),
+            (r#"struct S { #[debuggable(items, only = "a", only = "b")] v: Vec<u8> }"#, "duplicate `only`"),
+            (r#"struct S { #[debuggable(items, onyl = "x")] v: Vec<u8> }"#, "did you mean `only`?"),
         ];
         for (src, want) in cases {
             let got = error(src);

@@ -1,0 +1,69 @@
+---
+source: tests/harness/tests/debuggers.rs
+---
+## slab
+$1 = 2 items = {
+  [1] = "a",
+  [3] = "d"
+}
+## arena
+$2 = 2 items = {
+  [1] = (1, 2) = {
+    x = 1,
+    y = 2
+  },
+  [3] = (-3, 4) = {
+    x = -3,
+    y = 4
+  }
+}
+## slotmap
+$3 = 2 items = {
+  [1] = "x",
+  [3] = "y"
+}
+## flagged
+$4 = {
+  [1] = 11,
+  [3] = 13
+}
+## typo
+$5 = {
+  [..] = <only: no variant `Ocupied`>
+}
+## all_vacant
+$6 = 0 items
+## empty
+$7 = 0 items
+## live
+$8 = {
+  [1] = fx_slots::Cell {
+    live: true,
+    v: 2
+  }
+}
+## wrapped
+$9 = {
+  [0] = 7,
+  [1] = 8
+}
+## nonscalar
+$10 = {
+  [..] = <only: `meta` is not an integer>
+}
+## typo_field
+$11 = {
+  [..] = <only: no field `flgas`>
+}
+## dangling
+$12 = {
+  n = 2,
+  [0] = <unavailable>,
+  [1] = <unavailable>
+}
+## dangling_rows
+$13 = {
+  n = 2,
+  [0] = <unavailable>,
+  [1] = <unavailable>
+}

@@ -24,6 +24,15 @@ pub enum Tagged {
     Z,
 }
 
+// Generic: LLDB names the variant types `Msg<u32>::Data<u32>`, generic arguments included.
+#[derive(Debuggable)]
+pub enum Msg<T> {
+    #[debuggable(summary = "data {0}")]
+    Data(T),
+    #[debuggable(summary = "closed")]
+    Closed,
+}
+
 pub struct Fixture<'a> {
     pub ident: Token,
     pub num: Token,
@@ -32,6 +41,8 @@ pub struct Fixture<'a> {
     pub glyphs: [Glyph; 3],
     pub tagged: [Tagged; 3],
     pub by_ref: &'a Token,
+    pub msg: Msg<u32>,
+    pub closed: Msg<u32>,
 }
 
 /// The harness breaks here and prints `f`'s fields. The empty `asm!` keeps `f` live and its
@@ -54,6 +65,8 @@ fn main() {
         glyphs: [Glyph::Char('q'), Glyph::Space, Glyph::Newline],
         tagged: [Tagged::X(1), Tagged::Y { keep: 2, drop: 3 }, Tagged::Z],
         by_ref: &shared,
+        msg: Msg::Data(5),
+        closed: Msg::Closed,
     };
     debuggable_fixture_stop(&f);
 }

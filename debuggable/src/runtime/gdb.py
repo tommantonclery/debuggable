@@ -12,12 +12,13 @@ import json
 
 import gdb
 
-MINOR = 5           # bump on any change; must match the entry name in __private.rs
+MINOR = 6           # bump on any change; must match the entry name in __private.rs
 SUMMARY_MAX = 64    # characters per rendered field in a summary
 ITEMS_MAX = 10000   # hard cap on items children
 TEXT_MAX = 1024     # bytes read for a text field
 
 _SCALARS = (gdb.TYPE_CODE_INT, gdb.TYPE_CODE_BOOL, gdb.TYPE_CODE_CHAR, gdb.TYPE_CODE_FLT)
+_INTEGERS = (gdb.TYPE_CODE_INT, gdb.TYPE_CODE_BOOL, gdb.TYPE_CODE_CHAR, gdb.TYPE_CODE_ENUM)
 
 
 # ---- Inter-runtime protocol (frozen for all of v1, see schema §3.3) ---------------------
@@ -308,6 +309,76 @@ def _items(node, spec):
         yield "[%d]" % i, el
 
 
+def _path(v, segments):
+    """Follow field names from `v` (design 0002 §2.2), through unions and transparent
+    wrappers. None if a step fails."""
+    for seg in segments:
+        if v.type.strip_typedefs().code not in (gdb.TYPE_CODE_STRUCT, gdb.TYPE_CODE_UNION):
+            return None
+        v = _field(v, seg)
+        if v is None:
+            return None
+        t = v.type.strip_typedefs()
+        inner = _unwrap_transparent(t)
+        if str(inner) != str(t) and v.address is not None:
+            v = v.address.cast(inner.pointer()).dereference()
+    return v
+
+
+def _keep(el, elem_type, only):
+    """(keep the element?, where `value` paths start), per design 0002 §2.1. Raises
+    _SourceError when the `only` path can't be followed."""
+    path, mask = only["path"], only.get("mask")
+    if len(path) == 1 and mask is None and getattr(elem_type, "dynamic", False):
+        variant, name = _active_variant(el)  # an enum: compare the active variant
+        return name == path[0], variant
+    v = _path(el, path)
+    if v is None or _fetched(v) is None:
+        raise _SourceError("<only: no field `%s`>" % ".".join(path))
+    if v.type.strip_typedefs().code not in _INTEGERS:
+        raise _SourceError("<only: `%s` is not an integer>" % ".".join(path))
+    n = int(v)
+    return (n & mask if mask else n) != 0, el
+
+
+def _slots(node, spec):
+    """Children for a `slots` field: `items` with `only` / `value` (design 0002)."""
+    try:
+        ptr, elem, n = _source(node, spec, "items")
+    except _SourceError as e:
+        yield "[..]", str(e)
+        return
+    only, value = spec.get("only"), spec.get("value")
+    t = elem.strip_typedefs()
+    if only and len(only["path"]) == 1 and "mask" not in only and getattr(t, "dynamic", False):
+        if only["path"][0] not in [f.name for f in t.fields() if f.name and not f.artificial]:
+            yield "[..]", "<only: no variant `%s`>" % only["path"][0]
+            return
+    reported = False
+    for i in range(min(n, ITEMS_MAX)):
+        try:
+            el = (ptr + i).dereference()
+            el.fetch_lazy()
+            start = el
+            if only:
+                keep, start = _keep(el, t, only)
+                if not keep:
+                    continue
+        except _SourceError as e:
+            if not reported:
+                reported = True
+                yield "[..]", str(e)
+            continue
+        except gdb.error:
+            yield "[%d]" % i, "<unavailable>"
+            continue
+        if value is None:
+            yield "[%d]" % i, el
+            continue
+        v = _path(start, value)
+        yield "[%d]" % i, (v if v is not None and _fetched(v) is not None else "<unavailable>")
+
+
 _ESCAPES = {"\0": "\\0", "\t": "\\t", "\r": "\\r", "\n": "\\n", "\\": "\\\\", '"': '\\"'}
 
 
@@ -382,8 +453,10 @@ class _Printer:
         hide = set(self.vd.get("hide", ()))
         rename = self.vd.get("rename", {})
         items = self.vd.get("items")
-        if items:
-            hide.add(items["field"])
+        slots = self.vd.get("slots")
+        for spec in (items, slots):
+            if spec:
+                hide.add(spec["field"])
         texts = {t["field"]: t for t in self.vd.get("text", ())}
         for f in node.type.fields():
             if not f.name or f.artificial:
@@ -398,6 +471,8 @@ class _Printer:
             yield rename.get(src, src), (v if v is not None else "<optimized out>")
         if items:
             yield from _items(node, items)
+        elif slots:
+            yield from _slots(node, slots)
 
 
 def _install():

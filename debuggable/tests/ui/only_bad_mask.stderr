@@ -1,0 +1,5 @@
+error: `only` mask must be non-zero
+ --> tests/ui/only_bad_mask.rs:3:32
+  |
+3 |     #[debuggable(items, only = "live & 0")]
+  |                                ^^^^^^^^^^
