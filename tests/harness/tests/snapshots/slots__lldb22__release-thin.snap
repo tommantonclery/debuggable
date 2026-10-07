@@ -1,0 +1,77 @@
+---
+source: tests/harness/tests/debuggers.rs
+---
+## slab
+(fx_slots::Slab<alloc::string::String>) f->slab = 2 items {
+  [1] = "a" {
+    [0] = 'a'
+  }
+  [3] = "d" {
+    [0] = 'd'
+  }
+}
+## arena
+(fx_slots::Arena<fx_slots::Point>) f->arena = 2 items {
+  [1] = (1, 2) {
+    x = 1
+    y = 2
+  }
+  [3] = (-3, 4) {
+    x = -3
+    y = 4
+  }
+}
+## slotmap
+(fx_slots::SlotMap<alloc::string::String>) f->slotmap = 2 items {
+  [1] = "x" {
+    [0] = 'x'
+  }
+  [3] = "y" {
+    [0] = 'y'
+  }
+}
+## flagged
+(fx_slots::Flagged) f->flagged = {
+  [1] = 11
+  [3] = 13
+}
+## typo
+(fx_slots::TypoSlab<unsigned int>) f->typo = {
+  [..] = "<only: no variant `Ocupied`>"
+}
+## all_vacant
+(fx_slots::Slab<alloc::string::String>) f->all_vacant = 0 items
+## empty
+(fx_slots::Slab<alloc::string::String>) f->empty = 0 items
+## live
+(fx_slots::Live) f->live = {
+  [1] = {
+    live = true
+    v = '\x02'
+  }
+}
+## wrapped
+(fx_slots::Wrapped) f->wrapped = {
+  [0] = 7
+  [1] = 8
+}
+## nonscalar
+(fx_slots::NonScalar) f->nonscalar = {
+  [..] = "<only: `meta` is not an integer>"
+}
+## typo_field
+(fx_slots::TypoField) f->typo_field = {
+  [..] = "<only: no field `flgas`>"
+}
+## dangling
+(fx_slots::Dangling) f->dangling = {
+  n = 2
+  [0] = "<unavailable>"
+  [1] = "<unavailable>"
+}
+## dangling_rows
+(fx_slots::DanglingRows) f->dangling_rows = {
+  n = 2
+  [0] = "<unavailable>"
+  [1] = "<unavailable>"
+}
