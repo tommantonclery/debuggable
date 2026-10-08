@@ -6,6 +6,12 @@ A derive macro that embeds GDB and LLDB visualizers for your Rust types.
 [![crates.io](https://img.shields.io/crates/v/debuggable.svg)](https://crates.io/crates/debuggable)
 [![docs.rs](https://docs.rs/debuggable/badge.svg)](https://docs.rs/debuggable)
 
+![The same value in VS Code's variables view: plain types on top, the same types deriving Debuggable below](https://raw.githubusercontent.com/tommantonclery/debuggable/main/docs/images/showcase.png)
+
+*The same data twice, from [`examples/showcase.rs`](debuggable/examples/showcase.rs). Above: plain
+types, including the debugger failing on the slot map's empty slots. Below: the same types with
+`#[derive(Debuggable)]`.*
+
 A debugger shows how a type is stored: raw pointers, capacities, bookkeeping fields, slots that
 aren't in use. Usually you want to see what the value holds. With `debuggable` you write that
 down once, next to the type, and GDB, LLDB and VS Code show it that way, for you and for anyone
