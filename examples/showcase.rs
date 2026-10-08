@@ -1,6 +1,6 @@
 //! The same data in plain types and in types that derive `Debuggable`, to compare in a debugger.
 //!
-//!     cargo build -p debuggable --example showcase
+//!     cargo build -p debuggable-examples --example showcase
 //!     rust-gdb target/debug/examples/showcase -ex 'break showcase::look' -ex run -ex 'p *plain' -ex 'p *pretty'
 //!
 //! In VS Code (CodeLLDB), set a breakpoint in `look` and expand `plain` and `pretty`.

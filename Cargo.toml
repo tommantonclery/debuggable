@@ -1,5 +1,5 @@
 [workspace]
-members = ["debuggable", "debuggable-derive", "cargo-debuggable", "tests/harness"]
+members = ["debuggable", "debuggable-derive", "cargo-debuggable", "examples", "tests/harness"]
 exclude = ["tests/fixtures"]
 resolver = "2"
 

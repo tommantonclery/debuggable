@@ -1,0 +1,17 @@
+[package]
+name = "debuggable-examples"
+description = "Examples for debuggable. Not published."
+version = "0.0.0"
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+debuggable = { path = "../debuggable" }
+
+[[example]]
+name = "showcase"
+path = "showcase.rs"
+
+[lints]
+workspace = true

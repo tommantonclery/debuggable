@@ -50,6 +50,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "debuggable-examples"
+version = "0.0.0"
+dependencies = [
+ "debuggable",
+]
+
+[[package]]
 name = "debuggable-harness"
 version = "0.0.0"
 dependencies = [

@@ -13,7 +13,7 @@ A derive macro that embeds GDB and LLDB visualizers for your types.
 
 ![The same value in VS Code's variables view: plain types on top, the same types deriving Debuggable below](https://raw.githubusercontent.com/tommantonclery/debuggable/main/docs/images/showcase.png)
 
-<sub>The same data twice, from <a href="debuggable/examples/showcase.rs"><code>examples/showcase.rs</code></a>. Above: plain types, with the debugger failing on the slot map's empty slots. Below: the same types with <code>#[derive(Debuggable)]</code>.</sub>
+<sub>The same data twice, from <a href="examples/showcase.rs"><code>examples/showcase.rs</code></a>. Above: plain types, with the debugger failing on the slot map's empty slots. Below: the same types with <code>#[derive(Debuggable)]</code>.</sub>
 
 </div>
 
