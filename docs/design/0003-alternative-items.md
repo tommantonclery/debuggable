@@ -1,7 +1,7 @@
 # 0003: Inline-or-heap collections (`items` alternatives and `{#}`)
 
-**Status:** proposed for 0.1.3. The current contract is `docs/internal/schema-v1.md` §4, which
-will be updated when this lands.
+**Status:** implemented on main (GDB runtime 1.7, LLDB loader 1.5), to be released in 0.1.3.
+The current contract is `docs/internal/schema-v1.md` §4.
 
 ## Problem
 
@@ -103,9 +103,13 @@ those, as one row, never as an empty view that looks valid:
 | Situation | Shown |
 |---|---|
 | no alternative exists in the current value | `[..] = <items: no alternative matched>` |
+| the matched path reaches something that isn't a `Vec`, array or pointer | `[..] = <unsupported items source>` |
+| the matched `len` path reaches something that isn't an integer | `[..] = <items: len is not an integer>` |
 | element memory can't be read | `[i] = <unavailable>` |
 
-As with 0002, LLDB shows these messages in quotes.
+While one of these rows is shown, `{#}` shows `<unavailable>` rather than a count, and the same
+goes for a slot collection showing an `only` error row. As with 0002, LLDB shows these messages
+in quotes.
 
 ## Schema
 
@@ -141,8 +145,9 @@ runtime 1.7 and LLDB loader 1.5.
 
 An `alternatives` fixture copies smallvec's default layout and tinyvec's (no dependencies), each
 with an inline and a spilled instance, with `u32` and `String` elements, plus an empty one. A
-misspelled segment in an inactive alternative checks the "no alternative matched" row. `{#}` is
-used in struct and variant summaries, and on a slot collection in the `slots` fixture. Snapshots
+misspelled variant in the alternative that would be active checks the "no alternative matched"
+row, and two more types check the other error rows. `{#}` is used in struct and variant
+summaries, and on a slot collection in the `slots` fixture. Snapshots
 cover GDB 15, LLDB 18, 20 and 22 and Apple LLDB in all four profiles, with derive unit tests for
 each error above and a UI test for a span. Annotated local copies of smallvec 1 and tinyvec 1 get
 checked in rust-gdb and LLDB.

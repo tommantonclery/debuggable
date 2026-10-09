@@ -205,7 +205,7 @@ With the feature off, nothing changes: no dependency, no MSRV bump, nothing in t
 
 | Attribute | On | Effect |
 |---|---|---|
-| `summary = "..."` | struct, enum variant | One-line summary. `{field}` (or `{0}` for a tuple field) inserts a field; `{{` and `}}` are literal braces. |
+| `summary = "..."` | struct, enum variant | One-line summary. `{field}` (or `{0}` for a tuple field) inserts a field, `{#}` the number of elements; `{{` and `}}` are literal braces. |
 | `hide` | field | Leave the field out. `PhantomData` fields are left out automatically. |
 | `rename = "..."` | field | Show the field under another name. |
 | `text` | field | Show bytes as a string, `"hello"`: a `[u8; N]`, `Vec<u8>` or byte pointer. Invalid UTF-8 shows as `\xNN`. |
@@ -218,6 +218,7 @@ With the feature off, nothing changes: no dependency, no MSRV bump, nothing in t
 | `len = "field"` | with `items` or `text` | How many elements to show: for a `Vec` or array, at most this many; for a pointer, required. |
 | `only = "..."` | with `items` | Show only some elements: those in a given enum variant (`"Occupied"`), or those where a field is non-zero, optionally masked (`"version & 1"`). For slab-, arena- and slot-map-style collections. |
 | `value = "path"` | with `items` | Show a field of each element instead of the whole element (`"0"`, `"u.value"`). |
+| `items = "path"`, `len = "path"` | struct, enum | One place the elements can be, for collections that move between an inline buffer and the heap (smallvec, tinyvec). Repeat it for each place; the first that exists in the value is shown. |
 
 Full reference with examples: [docs.rs/debuggable](https://docs.rs/debuggable).
 

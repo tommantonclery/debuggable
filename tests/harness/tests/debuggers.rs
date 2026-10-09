@@ -57,6 +57,14 @@ fn slots() {
 }
 
 #[test]
+fn alternatives() {
+    check(
+        "alternatives",
+        &["small_inline", "small_heap", "small_empty", "zero_inline", "tiny_inline", "tiny_heap", "tiny_array", "dangling_heap", "typo", "holder", "wrong_source", "bad_len"],
+    );
+}
+
+#[test]
 fn deps() {
     check("deps", &["temp", "pair", "flag"]);
 }

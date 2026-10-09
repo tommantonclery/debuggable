@@ -6,6 +6,14 @@ use proc_macro2::Span;
 pub(crate) enum Part {
     Lit(String),
     Field(String),
+    /// `{#}`: the number of elements the type shows (design 0003).
+    Count,
+}
+
+/// One type-level `items = "path"` alternative (design 0003).
+pub(crate) struct Alternative {
+    pub items: Vec<String>,
+    pub len: Option<Vec<String>>,
 }
 
 /// `only = "path & mask"` on an `items` field (design 0002 §2.1).
@@ -45,6 +53,7 @@ pub(crate) struct Ty {
     pub generic: bool,
     pub summary: Option<Vec<Part>>,
     pub body: Body,
+    pub alternatives: Vec<Alternative>,
 }
 
 /// A JSON string literal that is ASCII-only and never contains `'` (schema-v1 §3.1).
@@ -83,8 +92,9 @@ fn members(summary: Option<&[Part]>, fields: &[Field], out: &mut String) {
         out.push_str(",\"summary\":");
         list(parts, out, |p, out| {
             let (kind, text) = match p {
-                Part::Lit(t) => ("lit", t),
-                Part::Field(f) => ("field", f),
+                Part::Lit(t) => ("lit", t.as_str()),
+                Part::Field(f) => ("field", f.as_str()),
+                Part::Count => ("count", ""),
             };
             out.push_str("[\"");
             out.push_str(kind);
@@ -182,6 +192,18 @@ pub(crate) fn json_tail(ty: &Ty) -> String {
             }
             j.push('}');
         }
+    }
+    if !ty.alternatives.is_empty() {
+        j.push_str(",\"alternatives\":");
+        list(&ty.alternatives, &mut j, |alt, out| {
+            out.push_str("{\"items\":");
+            list(&alt.items, out, |s, out| json_str(s, out));
+            if let Some(len) = &alt.len {
+                out.push_str(",\"len\":");
+                list(len, out, |s, out| json_str(s, out));
+            }
+            out.push('}');
+        });
     }
     j.push('}');
     j

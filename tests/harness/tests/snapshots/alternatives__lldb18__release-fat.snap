@@ -1,0 +1,78 @@
+---
+source: tests/harness/tests/debuggers.rs
+---
+## small_inline
+(fx_alternatives::SmallVec<unsigned int[4]>) f->small_inline = 3 items {
+  [0] = 1
+  [1] = 2
+  [2] = 3
+}
+## small_heap
+(fx_alternatives::SmallVec<alloc::string::String[2]>) f->small_heap = 3 items {
+  [0] = "x" {
+    [0] = 'x'
+  }
+  [1] = "y" {
+    [0] = 'y'
+  }
+  [2] = "z" {
+    [0] = 'z'
+  }
+}
+## small_empty
+(fx_alternatives::SmallVec<unsigned int[4]>) f->small_empty = 0 items
+## zero_inline
+(fx_alternatives::SmallVec<unsigned int[]>) f->zero_inline = 2 items {
+  [0] = 7
+  [1] = 8
+}
+## tiny_inline
+(fx_alternatives::TinyVec<[u8; 4]>) f->tiny_inline = 2 items (inline) {
+  [0] = '\n'
+  [1] = '\x14'
+}
+## tiny_heap
+(fx_alternatives::TinyVec<[alloc::string::String; 2]>) f->tiny_heap = 2 items {
+  [0] = "p" {
+    [0] = 'p'
+  }
+  [1] = "q" {
+    [0] = 'q'
+  }
+}
+## tiny_array
+(fx_alternatives::TinyVec<[u8; 2]>[2]) f->tiny_array = {
+  [0] = 1 items (inline) {
+    [0] = '\a'
+  }
+  [1] = 2 items {
+    [0] = '\b'
+    [1] = '\t'
+  }
+}
+## dangling_heap
+(fx_alternatives::SmallVec<unsigned int[1]>) f->dangling_heap = 2 items {
+  [0] = "<unavailable>"
+  [1] = "<unavailable>"
+}
+## typo
+(fx_alternatives::TypoVec<unsigned int[1]>) f->typo = <unavailable> items {
+  [..] = "<items: no alternative matched>"
+}
+## holder
+(fx_alternatives::Holder) f->holder = v=3 items {
+  v = 3 items {
+    [0] = 4
+    [1] = 5
+    [2] = 6
+  }
+}
+## wrong_source
+(fx_alternatives::WrongSource) f->wrong_source = <unavailable> items {
+  capacity = 3
+  [..] = "<unsupported items source>"
+}
+## bad_len
+(fx_alternatives::BadLen) f->bad_len = <unavailable> items {
+  [..] = "<items: len is not an integer>"
+}

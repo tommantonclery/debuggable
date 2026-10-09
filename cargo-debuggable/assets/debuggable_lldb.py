@@ -15,7 +15,7 @@ import json
 
 import lldb
 
-VERSION = "1.4"           # loader version, reported by `debuggable status`
+VERSION = "1.5"           # loader version, reported by `debuggable status`
 CATEGORY = "debuggable"
 SECTION_NAMES = (".debug_gdb_scripts", "__debuggable")
 ENTRY_PREFIX = b"\x04debuggable-v1-"
@@ -218,28 +218,35 @@ def _source(node, spec):
     src = _field(node, spec["field"])
     if src is None:
         return None
-    t = src.GetType()
     lf = _field(node, spec["len"]) if spec.get("len") else None
+    if spec.get("len") and lf is None:
+        return None
+    return _source_at(src, lf.GetValueAsUnsigned() if lf is not None else None)
+
+
+def _source_at(src, count):
+    """Like _source, for a value already found. `count` is the `len` value or None."""
+    t = src.GetType()
     if (t.GetName() or "").startswith("alloc::vec::Vec<"):
         elem = t.GetTemplateArgumentType(0)
         base = _first_ptr(src).GetValueAsUnsigned()
         n = src.GetChildMemberWithName("len").GetValueAsUnsigned()
-        if lf is not None:
-            n = min(n, lf.GetValueAsUnsigned())
+        if count is not None:
+            n = min(n, count)
     elif t.IsArrayType():  # [T; N] stored in place (inline buffers)
         elem = t.GetArrayElementType()
         base = src.GetLoadAddress()
         if base == lldb.LLDB_INVALID_ADDRESS or elem.GetByteSize() == 0:
             return None
         n = t.GetByteSize() // elem.GetByteSize()
-        if lf is not None:
-            n = min(n, lf.GetValueAsUnsigned())
+        if count is not None:
+            n = min(n, count)
     else:
         ptr = src if t.IsPointerType() else _first_ptr(src)  # *T or NonNull<T>
         elem = ptr.GetType().GetPointeeType()
-        if lf is None:
+        if count is None:
             return None
-        base, n = ptr.GetValueAsUnsigned(), lf.GetValueAsUnsigned()
+        base, n = ptr.GetValueAsUnsigned(), count
     elem = _unwrap_transparent(elem)
     if not elem.IsValid() or elem.GetByteSize() == 0:
         return None
@@ -256,11 +263,34 @@ def _items(parent, node, spec):
             for i in range(min(n, ITEMS_MAX))]
 
 
+def _elements(parent, base, elem, n):
+    """Children `[0]`, `[1]`, ...; unreadable ones say `<unavailable>`, as in GDB."""
+    size, process, kids = elem.GetByteSize(), parent.GetProcess(), []
+    for i in range(min(n, ITEMS_MAX)):
+        err = lldb.SBError()
+        process.ReadMemory(base + i * size, min(size, 8), err)
+        if err.Success():
+            kids.append(parent.CreateValueFromAddress("[%d]" % i, base + i * size, elem))
+        else:
+            kids.append(_message(parent, "[%d]" % i, "<unavailable>"))
+    return kids
+
+
 def _path(v, segments):
-    """Follow field names from `v` (design 0002 §2.2), through unions and transparent
-    wrappers. None if a step fails."""
+    """Follow names from `v` (designs 0002 and 0003): fields, through unions and transparent
+    wrappers, and enum variants, which only lead somewhere while active. None if a step
+    fails or names an inactive variant."""
     for seg in segments:
-        v = _field(v.GetNonSyntheticValue(), seg)
+        raw = v.GetNonSyntheticValue()
+        if raw.GetChildMemberWithName("$variants$").IsValid():  # an enum: seg is a variant
+            try:
+                v, name = _active_variant(raw)
+            except ValueError:
+                return None
+            if name != seg:
+                return None
+            continue
+        v = _field(raw, seg)
         if v is None:
             return None
         t = v.GetType()
@@ -271,6 +301,44 @@ def _path(v, segments):
                 return None
             v = v.CreateValueFromAddress(v.GetName() or "v", addr, inner)
     return v
+
+
+def _alternative(root, alts):
+    """((address, element type, count), None) from the first alternative whose paths exist in
+    `root` (design 0003), or (None, the message to show), as in the GDB runtime."""
+    for alt in alts:
+        src = _path(root, alt["items"])
+        if src is None or not src.IsValid():
+            continue
+        count = None
+        if alt.get("len"):
+            lv = _path(root, alt["len"])
+            if lv is None or not lv.IsValid() or lv.GetError().Fail():
+                continue
+            if not lv.GetType().GetTypeFlags() & lldb.eTypeIsScalar:
+                return None, "<items: len is not an integer>"
+            count = lv.GetValueAsUnsigned()
+        try:
+            found = _source_at(src, count)
+        except ValueError:  # e.g. the path reached a plain integer, not a collection
+            found = None
+        return (found, None) if found is not None else (None, "<unsupported items source>")
+    return None, "<items: no alternative matched>"
+
+
+def _count(raw, d, node, vd):
+    """`{#}`: the number of element children shown (design 0003), or None."""
+    if d.get("alternatives"):
+        src, _ = _alternative(raw, d["alternatives"])
+        return None if src is None else min(src[2], ITEMS_MAX)
+    if vd.get("items"):
+        src = _source(node, vd["items"])
+        return None if src is None else min(src[2], ITEMS_MAX)
+    if vd.get("slots"):
+        names = [k.GetName() for k in _slots(raw, node, vd["slots"])]
+        # an error row means the count is not known; never show a confident wrong number
+        return None if "[..]" in names else len(names)
+    return None
 
 
 def _variant_names(el):
@@ -417,8 +485,12 @@ def summary(valobj, _internal_dict):
             # Return "" (not None) for "no summary": LLDB 20 prints a returned None as "None".
             return "{}" if valobj.GetNumChildren() == 0 else ""
         texts = {x["field"]: x for x in vd.get("text", ())}
+        count = None
+        if any(k == "count" for k, _ in parts):
+            count = _count(raw, d, node, vd)
         return "".join(
             t if k == "lit"
+            else ("<unavailable>" if count is None else str(count)) if k == "count"
             else _text_summary(raw, node, texts[t]) if t in texts
             else _render(_field(node, t))
             for k, t in parts
@@ -469,6 +541,12 @@ class Synth:
                 self.kids.extend(_items(self.valobj, node, items))
             elif slots:
                 self.kids.extend(_slots(self.valobj, node, slots))
+            elif d.get("alternatives"):
+                src, message = _alternative(raw, d["alternatives"])
+                if src is None:
+                    self.kids.append(_message(self.valobj, "[..]", message))
+                else:
+                    self.kids.extend(_elements(self.valobj, *src))
         except Exception:
             pass  # keep whatever children were collected
         return False

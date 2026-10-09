@@ -7,7 +7,7 @@
 
 mod emit;
 
-use emit::{Body, Field, Only, Part, Ty, Variant};
+use emit::{Alternative, Body, Field, Only, Part, Ty, Variant};
 use proc_macro::TokenStream;
 use proc_macro2::Span;
 use syn::ext::IdentExt;
@@ -51,17 +51,23 @@ struct Opts {
     len: Option<LitStr>,
     only: Option<LitStr>,
     value: Option<LitStr>,
+    /// On a type: one `(items, len)` per `#[debuggable(items = "...", ...)]` attribute.
+    alternatives: Vec<(LitStr, Option<LitStr>)>,
 }
 
 fn opts(attrs: &[Attribute], place: Place) -> Result<Opts> {
     let mut o = Opts::default();
+    let on_type = matches!(place, Place::Struct | Place::Enum);
     for attr in attrs.iter().filter(|a| a.path().is_ident("debuggable")) {
+        // On a type, `items = "..."` and its `len` pair up within one attribute.
+        let (mut alt_items, mut alt_len): (Option<LitStr>, Option<LitStr>) = (None, None);
         attr.parse_nested_meta(|m| {
             let key = m.path.get_ident().map(|i| i.to_string()).unwrap_or_default();
             let span = m.path.span();
             let allowed = match key.as_str() {
                 "summary" => matches!(place, Place::Struct | Place::Variant),
                 "hide" | "rename" => matches!(place, Place::StructField | Place::VariantField),
+                "items" | "len" if on_type => true,
                 "items" | "text" | "len" | "only" | "value" => place == Place::StructField,
                 _ => {
                     const OPTIONS: [&str; 8] = ["summary", "hide", "rename", "items", "text", "len", "only", "value"];
@@ -91,6 +97,18 @@ fn opts(attrs: &[Attribute], place: Place) -> Result<Opts> {
                 }
                 Ok(())
             };
+            if on_type {
+                let has_value = m.input.peek(syn::Token![=]);
+                return match key.as_str() {
+                    "items" if !has_value => Err(m.error("on a type, write `items = \"path\"` (one attribute per place the elements can be)")),
+                    "items" => value(&m, &mut alt_items),
+                    "len" => value(&m, &mut alt_len),
+                    _ => value(&m, &mut o.summary),
+                };
+            }
+            if key == "items" && m.input.peek(syn::Token![=]) {
+                return Err(m.error("on a field, write `items` without a value (`items = \"path\"` goes on the type)"));
+            }
             match key.as_str() {
                 "summary" => value(&m, &mut o.summary),
                 "rename" => value(&m, &mut o.rename),
@@ -102,6 +120,13 @@ fn opts(attrs: &[Attribute], place: Place) -> Result<Opts> {
                 _ => flag(&m, &mut o.items),
             }
         })?;
+        match (alt_items, alt_len) {
+            (Some(items), len) => o.alternatives.push((items, len)),
+            (None, Some(len)) => {
+                return Err(Error::new(len.span(), "`len` on a type needs `items = \"...\"` in the same attribute"))
+            }
+            (None, None) => {}
+        }
     }
     Ok(o)
 }
@@ -281,7 +306,7 @@ fn unknown_field(name: &str, fields: &[Field], what: &str) -> String {
 }
 
 /// Parse a summary format string: `{field}` references, `{{`/`}}` escapes, literal text.
-fn summary(lit: &LitStr, fields: &[Field]) -> Result<Vec<Part>> {
+fn summary(lit: &LitStr, fields: &[Field], has_items: bool) -> Result<Vec<Part>> {
     let s = lit.value();
     let err = |msg: String| Error::new(lit.span(), msg);
     let mut parts = Vec::new();
@@ -296,6 +321,19 @@ fn summary(lit: &LitStr, fields: &[Field]) -> Result<Vec<Part>> {
             '}' if chars.peek() == Some(&'}') => {
                 chars.next();
                 text.push('}');
+            }
+            '{' if chars.peek() == Some(&'#') => {
+                chars.next();
+                if chars.next() != Some('}') {
+                    return Err(err("`{#` must be followed by `}`: `{#}` is the number of elements".into()));
+                }
+                if !has_items {
+                    return Err(err("`{#}` counts elements, but this type has no `items`".into()));
+                }
+                if !text.is_empty() {
+                    parts.push(Part::Lit(std::mem::take(&mut text)));
+                }
+                parts.push(Part::Count);
             }
             '{' => {
                 let mut name = String::new();
@@ -340,32 +378,96 @@ fn summary(lit: &LitStr, fields: &[Field]) -> Result<Vec<Part>> {
 
 fn model(input: &DeriveInput) -> Result<Ty> {
     let generic = input.generics.params.iter().any(|p| !matches!(p, GenericParam::Lifetime(_)));
-    let (summary_lit, body) = match &input.data {
+    let (summary_lit, body, alts) = match &input.data {
         Data::Struct(s) => {
             let o = opts(&input.attrs, Place::Struct)?;
             let fs = fields(&s.fields, Place::StructField)?;
-            (o.summary, Body::Struct(fs))
+            let alts = alternatives(&o.alternatives)?;
+            if let (Some((lit, _)), true) = (o.alternatives.first(), fs.iter().any(|f| f.items)) {
+                return Err(Error::new(
+                    lit.span(),
+                    "use either field-level `items` or `items = \"...\"` on the type, not both",
+                ));
+            }
+            for (alt, (lit, len)) in alts.iter().zip(&o.alternatives) {
+                check_struct_path(&alt.items, lit, &fs, "`items`")?;
+                if let (Some(path), Some(len)) = (&alt.len, len) {
+                    check_struct_path(path, len, &fs, "`len`")?;
+                }
+            }
+            (o.summary, Body::Struct(fs), alts)
         }
         Data::Enum(e) => {
-            opts(&input.attrs, Place::Enum)?;
+            let o = opts(&input.attrs, Place::Enum)?;
+            let alts = alternatives(&o.alternatives)?;
             let mut variants = Vec::new();
             for v in &e.variants {
                 let o = opts(&v.attrs, Place::Variant)?;
                 let fs = fields(&v.fields, Place::VariantField)?;
-                let summary = o.summary.as_ref().map(|lit| summary(lit, &fs)).transpose()?;
+                let summary = o.summary.as_ref().map(|lit| summary(lit, &fs, !alts.is_empty())).transpose()?;
                 variants.push(Variant { name: v.ident.unraw().to_string(), summary, fields: fs });
             }
-            (None, Body::Enum(variants))
+            for (alt, (lit, len)) in alts.iter().zip(&o.alternatives) {
+                check_enum_path(&alt.items, lit, &variants)?;
+                if let (Some(path), Some(len)) = (&alt.len, len) {
+                    check_enum_path(path, len, &variants)?;
+                }
+            }
+            (None, Body::Enum(variants), alts)
         }
         Data::Union(u) => {
             return Err(Error::new(u.union_token.span, "`Debuggable` can't be derived for unions"));
         }
     };
     let summary = match (&summary_lit, &body) {
-        (Some(lit), Body::Struct(fs)) => Some(summary(lit, fs)?),
+        (Some(lit), Body::Struct(fs)) => Some(summary(lit, fs, !alts.is_empty() || fs.iter().any(|f| f.items))?),
         _ => None,
     };
-    Ok(Ty { name: input.ident.unraw().to_string(), generic, summary, body })
+    Ok(Ty { name: input.ident.unraw().to_string(), generic, summary, body, alternatives: alts })
+}
+
+/// Parse the paths of type-level `items = "..."` alternatives (design 0003).
+fn alternatives(raw: &[(LitStr, Option<LitStr>)]) -> Result<Vec<Alternative>> {
+    raw.iter()
+        .map(|(items, len)| {
+            Ok(Alternative {
+                items: parse_path(items, "items")?,
+                len: len.as_ref().map(|l| parse_path(l, "len")).transpose()?,
+            })
+        })
+        .collect()
+}
+
+/// On a struct, a path must start at one of its fields.
+fn check_struct_path(path: &[String], lit: &LitStr, fields: &[Field], what: &str) -> Result<()> {
+    if fields.iter().any(|f| f.name == path[0]) {
+        return Ok(());
+    }
+    Err(Error::new(lit.span(), unknown_field(&path[0], fields, what)))
+}
+
+/// On an enum, a path starts at a variant, then (if it goes on) one of that variant's fields.
+fn check_enum_path(path: &[String], lit: &LitStr, variants: &[Variant]) -> Result<()> {
+    let Some(v) = variants.iter().find(|v| v.name == path[0]) else {
+        let msg = match closest(&path[0], variants.iter().map(|v| v.name.as_str())) {
+            Some(best) => format!("unknown variant `{}`; did you mean `{best}`?", path[0]),
+            None => {
+                let names: Vec<String> = variants.iter().map(|v| format!("`{}`", v.name)).collect();
+                format!("unknown variant `{}`; the enum has {}", path[0], names.join(", "))
+            }
+        };
+        return Err(Error::new(lit.span(), msg));
+    };
+    match path.get(1) {
+        Some(field) if !v.fields.iter().any(|f| &f.name == field) => {
+            let mut msg = format!("variant `{}` has no field `{field}`", v.name);
+            if let Some(best) = closest(field, v.fields.iter().map(|f| f.name.as_str())) {
+                msg.push_str(&format!("; did you mean `{best}`?"));
+            }
+            Err(Error::new(lit.span(), msg))
+        }
+        _ => Ok(()),
+    }
 }
 
 #[cfg(test)]
@@ -431,6 +533,28 @@ mod tests {
             // plain items: unchanged
             json(r#"struct S { #[debuggable(items)] e: Vec<u8> }"#),
             r#""generic":false,"kind":"struct","items":{"field":"e"}}"#
+        );
+    }
+
+    #[test]
+    fn alternatives_on_struct_and_enum() {
+        assert_eq!(
+            json(r#"#[debuggable(summary = "{#} items")]
+                #[debuggable(items = "data.Inline.0", len = "capacity")]
+                #[debuggable(items = "data.Heap.ptr", len = "data.Heap.len")]
+                struct SmallVec<A> { #[debuggable(hide)] capacity: usize, #[debuggable(hide)] data: D<A> }"#),
+            r#""generic":true,"kind":"struct","summary":[["count",""],["lit"," items"]],"hide":["capacity","data"],"alternatives":[{"items":["data","Inline","0"],"len":["capacity"]},{"items":["data","Heap","ptr"],"len":["data","Heap","len"]}]}"#
+        );
+        assert_eq!(
+            json(r#"#[debuggable(items = "Inline.0.data", len = "Inline.0.len")]
+                #[debuggable(items = "Heap.0")]
+                enum TinyVec<A> { #[debuggable(summary = "{#} items")] Inline(#[debuggable(hide)] AV<A>), Heap(#[debuggable(hide)] Vec<A>) }"#),
+            r#""generic":true,"kind":"enum","variants":{"Inline":{"summary":[["count",""],["lit"," items"]],"hide":["0"]},"Heap":{"hide":["0"]}},"alternatives":[{"items":["Inline","0","data"],"len":["Inline","0","len"]},{"items":["Heap","0"]}]}"#
+        );
+        assert_eq!(
+            // `{#}` with field-level items too
+            json(r#"#[debuggable(summary = "{#}")] struct S { #[debuggable(items)] v: Vec<u8> }"#),
+            r#""generic":false,"kind":"struct","summary":[["count",""]],"items":{"field":"v"}}"#
         );
     }
 
@@ -503,6 +627,15 @@ mod tests {
             (r#"struct S { #[debuggable(items, value = "a.-b")] v: Vec<u8> }"#, "not a field name"),
             (r#"struct S { #[debuggable(items, only = "a", only = "b")] v: Vec<u8> }"#, "duplicate `only`"),
             (r#"struct S { #[debuggable(items, onyl = "x")] v: Vec<u8> }"#, "did you mean `only`?"),
+            (r#"#[debuggable(items = "dta.x")] struct S { data: u8 }"#, "`items` refers to unknown field `dta`; did you mean `data`?"),
+            (r#"#[debuggable(items = "Hep.0")] enum E { Heap(Vec<u8>) }"#, "unknown variant `Hep`; did you mean `Heap`?"),
+            (r#"#[debuggable(items = "Heap.x")] enum E { Heap(Vec<u8>) }"#, "variant `Heap` has no field `x`"),
+            (r#"#[debuggable(len = "n")] struct S { n: u8 }"#, "`len` on a type needs `items = \"...\"` in the same attribute"),
+            (r#"struct S { #[debuggable(items = "v")] v: Vec<u8> }"#, "on a field, write `items` without a value"),
+            (r#"#[debuggable(items = "v")] struct S { #[debuggable(items)] v: Vec<u8> }"#, "either field-level `items` or `items = \"...\"` on the type, not both"),
+            (r#"#[debuggable(summary = "{#}")] struct S { a: u8 }"#, "`{#}` counts elements, but this type has no `items`"),
+            (r#"#[debuggable(items = "v")] struct S { #[debuggable(only = "x")] v: Vec<u8> }"#, "`only` needs `items`"),
+            (r#"#[debuggable(items, len = "n")] struct S { n: u8 }"#, "on a type, write `items = \"path\"`"),
         ];
         for (src, want) in cases {
             let got = error(src);

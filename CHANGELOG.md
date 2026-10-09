@@ -3,6 +3,20 @@
 All three crates (`debuggable`, `debuggable-derive`, `cargo-debuggable`) are released together
 with the same version. This project follows [Semantic Versioning](https://semver.org).
 
+## Unreleased
+
+### `debuggable`
+
+- Inline-or-heap collections (smallvec, tinyvec): `items = "path"` on the struct or enum, once
+  per place the elements can be, with an optional `len = "path"`. Path segments can name an enum
+  variant; the first place whose paths exist in the value is shown. GDB runtime 1.7.
+- `{#}` in summaries: the number of elements shown, for any type with `items`.
+
+### `cargo-debuggable`
+
+- LLDB loader 1.5: supports `items = "path"` alternatives and `{#}`. Run `cargo debuggable setup`
+  again after upgrading.
+
 ## 0.1.2 — 2026-10-07
 
 ### `debuggable`

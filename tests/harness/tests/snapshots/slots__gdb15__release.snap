@@ -2,7 +2,7 @@
 source: tests/harness/tests/debuggers.rs
 ---
 ## slab
-$1 = 2 items = {
+$1 = 2 of 2 items = {
   [1] = "a",
   [3] = "d"
 }
@@ -28,13 +28,13 @@ $4 = {
   [3] = 13
 }
 ## typo
-$5 = {
+$5 = <unavailable> items = {
   [..] = <only: no variant `Ocupied`>
 }
 ## all_vacant
-$6 = 0 items
+$6 = 0 of 0 items
 ## empty
-$7 = 0 items
+$7 = 0 of 0 items
 ## live
 $8 = {
   [1] = fx_slots::Cell {

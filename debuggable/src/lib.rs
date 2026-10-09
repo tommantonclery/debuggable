@@ -28,8 +28,9 @@
 //!
 //! ## `summary = "..."`: one-line summary
 //!
-//! On a struct, or on an enum variant. `{name}` inserts a field, `{0}` a tuple field, and
-//! `{{` and `}}` are literal braces. Summaries may use hidden fields. Each inserted field
+//! On a struct, or on an enum variant. `{name}` inserts a field, `{0}` a tuple field, `{#}`
+//! the number of elements (on types with `items`), and `{{` and `}}` are literal braces.
+//! Summaries may use hidden fields. Each inserted field
 //! shows the debugger's own one-line rendering of it, so a field that is itself
 //! `Debuggable` shows its summary.
 //!
@@ -163,6 +164,52 @@
 //! A slab holding "a" in slot 1 and "d" in slot 3 then shows as
 //! `2 items = {[1] = "a", [3] = "d"}`. Names inside the element type can't be checked at
 //! compile time; a misspelled variant shows `<only: no variant ...>` in the debugger.
+//!
+//! ## `items = "path"` on the type: inline-or-heap collections
+//!
+//! For types whose elements live in one of several places, such as small-vector types that
+//! move from an inline buffer to the heap. On the struct or enum, each
+//! `#[debuggable(items = "path", len = "path")]` names one place the elements can be. The
+//! first one whose paths exist in the current value is shown. A path segment can name an enum
+//! variant, and then only leads somewhere while that variant is active. Paths start at the
+//! type: on an enum, at a variant.
+//!
+//! ```
+//! # use debuggable::Debuggable;
+//! # use std::{marker::PhantomData, mem::MaybeUninit, ptr::NonNull};
+//! # pub trait Array { type Item; }
+//! # impl<T, const N: usize> Array for [T; N] { type Item = T; }
+//! enum SmallVecData<A: Array> {
+//!     Inline(MaybeUninit<A>),
+//!     Heap { ptr: NonNull<A::Item>, len: usize },
+//! }
+//!
+//! #[derive(Debuggable)]
+//! #[debuggable(summary = "{#} items")]
+//! #[debuggable(items = "data.Inline.0", len = "capacity")]  // inline: `capacity` is the length
+//! #[debuggable(items = "data.Heap.ptr", len = "data.Heap.len")]
+//! pub struct SmallVec<A: Array> {
+//!     #[debuggable(hide)]
+//!     capacity: usize,
+//!     #[debuggable(hide)]
+//!     data: SmallVecData<A>,
+//!     _marker: PhantomData<A::Item>,
+//! }
+//!
+//! #[derive(Debuggable)]
+//! #[debuggable(items = "Inline.0", len = "Inline.1")]
+//! #[debuggable(items = "Heap.0")]
+//! pub enum TinyVec<T> {
+//!     #[debuggable(summary = "{#} items (inline)")]
+//!     Inline(#[debuggable(hide)] [T; 4], #[debuggable(hide)] u16),
+//!     #[debuggable(summary = "{#} items")]
+//!     Heap(#[debuggable(hide)] Vec<T>),
+//! }
+//! ```
+//!
+//! Either way, three elements show as `3 items = {[0] = 1, [1] = 2, [2] = 3}`. The first
+//! segment of each path is checked at compile time; deeper ones can't be, and if no place
+//! matches, the debugger shows `<items: no alternative matched>`.
 //!
 //! ## `text`: show bytes as a string
 //!

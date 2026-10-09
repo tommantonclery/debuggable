@@ -12,7 +12,7 @@ import json
 
 import gdb
 
-MINOR = 6           # bump on any change; must match the entry name in __private.rs
+MINOR = 7           # bump on any change; must match the entry name in __private.rs
 SUMMARY_MAX = 64    # characters per rendered field in a summary
 ITEMS_MAX = 10000   # hard cap on items children
 TEXT_MAX = 1024     # bytes read for a text field
@@ -262,14 +262,21 @@ def _source(node, spec, kind):
     src = _field(node, spec["field"])
     if src is None:
         raise _SourceError("<unavailable>")
+    count = (lambda: _int_field(node, spec["len"])) if spec.get("len") else None
+    return _source_at(src, count, kind)
+
+
+def _source_at(src, count, kind):
+    """Like _source, for a value already found. `count` is None or a callable returning the
+    `len` value."""
     try:
         t = src.type.strip_typedefs()
         if (t.name or "").startswith("alloc::vec::Vec<"):
             elem = t.template_argument(0)
             ptr = _first_ptr(src)
             n = int(src["len"])
-            if spec.get("len"):
-                n = min(n, _int_field(node, spec["len"]))
+            if count:
+                n = min(n, count())
         elif t.code == gdb.TYPE_CODE_ARRAY:  # [T; N] stored in place (inline buffers)
             elem = t.target()
             lo, hi = t.range()
@@ -277,14 +284,14 @@ def _source(node, spec, kind):
             if src.address is None:
                 raise gdb.error("array not in memory")
             ptr = src.address.cast(elem.pointer())
-            if spec.get("len"):
-                n = min(n, _int_field(node, spec["len"]))
+            if count:
+                n = min(n, count())
         else:
             ptr = src if t.code == gdb.TYPE_CODE_PTR else _first_ptr(src)  # *T or NonNull<T>
             elem = ptr.type.strip_typedefs().target()
-            if not spec.get("len"):
+            if not count:
                 raise _SourceError("<%s: len required>" % kind)
-            n = _int_field(node, spec["len"])
+            n = count()
         elem = _unwrap_transparent(elem)
         return ptr.cast(elem.pointer()), elem, max(0, n)
     except ValueError:
@@ -293,13 +300,8 @@ def _source(node, spec, kind):
         raise _SourceError("<optimized out>")
 
 
-def _items(node, spec):
-    """Children `[0]`, `[1]`, ... for an `items` field."""
-    try:
-        ptr, _, n = _source(node, spec, "items")
-    except _SourceError as e:
-        yield "[..]", str(e)
-        return
+def _elements(ptr, n):
+    """Children `[0]`, `[1]`, ... read from `ptr`."""
     for i in range(min(n, ITEMS_MAX)):
         try:
             el = (ptr + i).dereference()
@@ -309,13 +311,33 @@ def _items(node, spec):
         yield "[%d]" % i, el
 
 
+def _items(node, spec):
+    """Children for an `items` field."""
+    try:
+        ptr, _, n = _source(node, spec, "items")
+    except _SourceError as e:
+        yield "[..]", str(e)
+        return
+    yield from _elements(ptr, n)
+
+
+def _resolved(v):
+    """An enum value with its active variant resolved. Values reached through arrays or
+    fields can arrive with every variant listed; re-reading through the address fixes that."""
+    if getattr(v.type.strip_typedefs(), "dynamic", False) and v.address is not None:
+        return v.address.dereference()
+    return v
+
+
 def _path(v, segments):
-    """Follow field names from `v` (design 0002 §2.2), through unions and transparent
-    wrappers. None if a step fails."""
+    """Follow names from `v` (designs 0002 and 0003): fields, through unions and transparent
+    wrappers, and enum variants, which only lead somewhere while active. None if a step
+    fails or names an inactive variant."""
     for seg in segments:
+        v = _resolved(v)
         if v.type.strip_typedefs().code not in (gdb.TYPE_CODE_STRUCT, gdb.TYPE_CODE_UNION):
             return None
-        v = _field(v, seg)
+        v = _field(v, seg)  # a resolved enum only has its active variant's field
         if v is None:
             return None
         t = v.type.strip_typedefs()
@@ -323,6 +345,25 @@ def _path(v, segments):
         if str(inner) != str(t) and v.address is not None:
             v = v.address.cast(inner.pointer()).dereference()
     return v
+
+
+def _alternative(root, alts):
+    """(pointer, element type, count) from the first alternative whose paths exist in `root`
+    (design 0003). Raises _SourceError."""
+    for alt in alts:
+        src = _path(root, alt["items"])
+        if src is None:
+            continue
+        count = None
+        if alt.get("len"):
+            lv = _path(root, alt["len"])
+            if lv is None or _fetched(lv) is None:
+                continue
+            if lv.type.strip_typedefs().code not in _INTEGERS:
+                raise _SourceError("<items: len is not an integer>")
+            count = lambda lv=lv: int(lv)
+        return _source_at(src, count, "items")
+    raise _SourceError("<items: no alternative matched>")
 
 
 def _keep(el, elem_type, only):
@@ -417,6 +458,7 @@ def _text(node, spec):
 
 class _Printer:
     def __init__(self, val, desc):
+        self.root, self.desc = val, desc  # the whole value: alternatives start here
         self.node, self.variant, self.vd = val, None, desc
         if desc.get("kind") == "enum":
             self.node, self.variant = _active_variant(val)
@@ -433,12 +475,32 @@ class _Printer:
                 return None if any(True for _ in self._children()) else "{}"
             return _for_host("".join(
                 text if kind == "lit"
+                else self._count_text() if kind == "count"
                 else _clip(_text(self.node, texts[text])) if text in texts
                 else _render(_field(self.node, text))
                 for kind, text in parts
             ))
         except Exception as e:  # last resort: never abort the user's print
             return "<debuggable: %s>" % e
+
+    def _count_text(self):
+        n = self._count()
+        return "<unavailable>" if n is None else str(n)
+
+    def _count(self):
+        """`{#}`: the number of element children this value shows (design 0003)."""
+        try:
+            if self.desc.get("alternatives"):
+                return min(_alternative(self.root, self.desc["alternatives"])[2], ITEMS_MAX)
+            if self.vd.get("items"):
+                return min(_source(self.node, self.vd["items"], "items")[2], ITEMS_MAX)
+            if self.vd.get("slots"):
+                labels = [label for label, _ in _slots(self.node, self.vd["slots"])]
+                # an error row means the count is not known; never show a confident wrong number
+                return None if "[..]" in labels else len(labels)
+        except _SourceError:
+            pass
+        return None
 
     def children(self):
         try:
@@ -473,6 +535,13 @@ class _Printer:
             yield from _items(node, items)
         elif slots:
             yield from _slots(node, slots)
+        elif self.desc.get("alternatives"):
+            try:
+                ptr, _, n = _alternative(self.root, self.desc["alternatives"])
+            except _SourceError as e:
+                yield "[..]", str(e)
+                return
+            yield from _elements(ptr, n)
 
 
 def _install():
