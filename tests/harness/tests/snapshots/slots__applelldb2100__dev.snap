@@ -2,7 +2,7 @@
 source: tests/harness/tests/debuggers.rs
 ---
 ## slab
-(fx_slots::Slab<alloc::string::String>) f->slab = 2 items {
+(fx_slots::Slab<alloc::string::String>) f->slab = 2 of 2 items {
   [1] = "a" {
     [0] = 'a'
   }
@@ -36,13 +36,13 @@ source: tests/harness/tests/debuggers.rs
   [3] = 13
 }
 ## typo
-(fx_slots::TypoSlab<unsigned int>) f->typo = {
+(fx_slots::TypoSlab<unsigned int>) f->typo = <unavailable> items {
   [..] = "<only: no variant `Ocupied`>"
 }
 ## all_vacant
-(fx_slots::Slab<alloc::string::String>) f->all_vacant = 0 items
+(fx_slots::Slab<alloc::string::String>) f->all_vacant = 0 of 0 items
 ## empty
-(fx_slots::Slab<alloc::string::String>) f->empty = 0 items
+(fx_slots::Slab<alloc::string::String>) f->empty = 0 of 0 items
 ## live
 (fx_slots::Live) f->live = {
   [1] = {
