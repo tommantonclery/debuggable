@@ -1,6 +1,6 @@
 # 0003: Inline-or-heap collections (`items` alternatives and `{#}`)
 
-**Status:** implemented on main (GDB runtime 1.7, LLDB loader 1.5), to be released in 0.1.3.
+**Status:** implemented in 0.1.3 (GDB runtime 1.7, LLDB loader 1.5).
 The current contract is `docs/internal/schema-v1.md` §4.
 
 ## Problem
