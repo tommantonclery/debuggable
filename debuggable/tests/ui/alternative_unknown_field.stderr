@@ -1,0 +1,5 @@
+error: `items` refers to unknown field `dta`; did you mean `data`?
+ --> tests/ui/alternative_unknown_field.rs:2:22
+  |
+2 | #[debuggable(items = "dta.x")]
+  |                      ^^^^^^^

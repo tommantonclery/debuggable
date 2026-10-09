@@ -157,6 +157,9 @@ runtime takes over, it also takes over the printers an older one registered.
   "slots":   {"field": "slots", "len": "len", "only": {"path": ["version"], "mask": 1}, "value": ["u", "value"]},
   "text":    [{"field": "name", "len": "name_len"}],    // runtime minor 5 / loader 1.3
 
+  // struct or enum, at the top level (runtime minor 7 / loader 1.5; never with field-level items):
+  "alternatives": [{"items": ["data", "Inline", "0"], "len": ["capacity"]}, {"items": ["data", "Heap", "ptr"], "len": ["data", "Heap", "len"]}],
+
   // enum only:
   "variants": {
     "Ident": {"summary": [["lit","Ident("],["field","name"],["lit",")"]]},
@@ -221,6 +224,15 @@ Rules:
   - Kept elements are labelled with their original index.
   - Why a separate key: an older runtime would show `items` with vacant slots as live values,
     which §7 counts as a misrender; it ignores `slots` and shows the plain field instead.
+- **`alternatives`** (runtime minor 7 / loader 1.5; design `docs/design/0003-alternative-items.md`):
+  type-level `items = "path"`. Each entry's `items` and optional `len` are paths from the whole
+  value (on an enum, the first segment is a variant). A variant segment only resolves while that
+  variant is active. Entries are tried in order; the first whose paths both resolve is used, with
+  the same source rules as `items`; if none resolves, one `[..] = <items: no alternative
+  matched>` child is shown. Unreadable elements show `<unavailable>`.
+- **Summary part `["count", ""]`** (runtime minor 7 / loader 1.5), from `{#}`: the number of
+  element children shown (after `len`, the limit and `only`), or `<unavailable>`. Older runtimes
+  render it as `<unavailable>`.
 - **Enum variants:** each key is a variant name. A missing variant or an empty object means the
   default rendering. The default summary is the variant name. Children are the active variant's
   visible fields. `items` and `text` aren't allowed in variants in v1.
@@ -284,6 +296,6 @@ Known limitations, documented for users, with `doctor` reporting descriptors tha
 |---|---|
 | Descriptor entry overhead (name + 3-line body, excluding JSON) | ≤ 180 B |
 | Typical descriptor JSON | 60–250 B |
-| Runtime entry (zlib + base64) | ≤ 6 KB (5.8 KB at minor 6; raised from 5 KB for `slots`: comment lines blanked and docstrings reduced to `""`, line numbers preserved). |
+| Runtime entry (zlib + base64) | ≤ 7 KB (6.4 KB at minor 7; raised from 5 KB for `slots` and to 7 KB for `alternatives`: comment lines blanked and docstrings reduced to `""`, line numbers preserved). |
 
 These are measured in CI on the fixture crate, and the regression threshold is set in Phase 6.

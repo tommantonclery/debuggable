@@ -13,7 +13,7 @@ pub enum Entry<T> {
 }
 
 #[derive(Debuggable)]
-#[debuggable(summary = "{len} items")]
+#[debuggable(summary = "{#} of {len} items")]
 pub struct Slab<T> {
     #[debuggable(items, only = "Occupied", value = "0")]
     entries: Vec<Entry<T>>,
@@ -31,6 +31,7 @@ impl<T> Slab<T> {
 
 // A misspelled variant: must say so, not look like an empty collection.
 #[derive(Debuggable)]
+#[debuggable(summary = "{#} items")]
 pub struct TypoSlab<T> {
     #[debuggable(items, only = "Ocupied", value = "0")]
     entries: Vec<Entry<T>>,

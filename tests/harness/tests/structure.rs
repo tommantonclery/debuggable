@@ -14,6 +14,7 @@ const EXPECTED: &[(&str, &[&str])] = &[
     ("enums", &["fx_enums::Token@", "fx_enums::Glyph@", "fx_enums::Tagged@", "fx_enums::Msg@"]),
     ("items", &["fx_items::Slot@", "fx_items::SlotMap@", "fx_items::Stack@", "fx_items::RawBuf@"]),
     ("slots", &["fx_slots::Slab@", "fx_slots::Arena@", "fx_slots::SlotMap@"]),
+    ("alternatives", &["fx_alternatives::SmallVec@", "fx_alternatives::TinyVec@", "fx_alternatives::Holder@"]),
     ("text", &["fx_text::InlineStr@", "fx_text::Tag@", "fx_text::Buf@", "fx_text::RawText@"]),
     ("deps", &["lib2021::Celsius@0.3.1", "lib2021::Pair@0.3.1", "lib2024::Flag@0.3.1"]),
 ];
