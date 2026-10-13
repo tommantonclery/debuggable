@@ -3,6 +3,24 @@
 All three crates (`debuggable`, `debuggable-derive`, `cargo-debuggable`) are released together
 with the same version. This project follows [Semantic Versioning](https://semver.org).
 
+## 0.1.4 — 2026-10-13
+
+### `cargo-debuggable`
+
+- `setup --help` and `doctor --help` print the help to stdout and exit 0. Before, they printed it
+  as an error and exited 2.
+- If `HOME` isn't set, the home directory falls back to `USERPROFILE`, so `doctor` gives a report
+  on Windows instead of failing with "HOME is not set". Windows is still unsupported: nothing is
+  emitted there.
+
+### Documentation
+
+- `troubleshooting.md` explains each `<only: ...>` and `<items: ...>` message the debuggers can
+  show, with the usual cause.
+- `compatibility.md` covers `text`, `only`/`value`, `items = "path"` and `{#}`, which it
+  previously left out.
+- Corrected the GDB runtime's size: about 6 KB per Linux binary, not 5 KB.
+
 ## 0.1.3 — 2026-10-09
 
 ### `debuggable`
