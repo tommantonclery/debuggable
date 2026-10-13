@@ -1,0 +1,5 @@
+# 125 rather than the default 100: it is what the code was already written to, and it keeps the
+# long match arms and `assert!` lines in one piece. The blocks that must stay tabular carry
+# `#[rustfmt::skip]`; see CONTRIBUTING.md.
+max_width = 125
+use_small_heuristics = "Max"

@@ -5,8 +5,8 @@
 ///
 /// Entries are assembled with `concat!`, which costs nothing at const evaluation (it is done
 /// during macro expansion); this conversion is the only step left for the const evaluator.
-/// A byte-by-byte copy there was measured at about 4.5 ms per derived type without
-/// incremental compilation; this is a single read. See `tools/bench-compile-time.py`.
+/// A byte-by-byte copy there measured 4–5 ms per derived type without incremental
+/// compilation; this is a single read. See `tools/bench-compile-time.py`.
 pub const fn bytes<const N: usize>(s: &str) -> [u8; N] {
     assert!(s.len() == N, "debuggable: entry length mismatch");
     // SAFETY: `s` is valid for reads of `s.len() == N` bytes (checked above), and `[u8; N]`
@@ -77,10 +77,7 @@ macro_rules! __entry_static {
 
 /// Disabled via `--cfg debuggable_disable`, or a target with no consumer in v1
 /// (Windows, wasm, AIX, ...): emit nothing.
-#[cfg(any(
-    debuggable_disable,
-    not(any(all(unix, not(target_os = "aix")), target_vendor = "apple"))
-))]
+#[cfg(any(debuggable_disable, not(any(all(unix, not(target_os = "aix")), target_vendor = "apple"))))]
 #[macro_export]
 #[doc(hidden)]
 macro_rules! __entry_static {

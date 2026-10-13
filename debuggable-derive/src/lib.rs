@@ -137,7 +137,9 @@ fn misplaced(key: &str, place: Place) -> String {
             "`summary` on an enum goes on each variant: `#[debuggable(summary = \"...\")]` above the variant".into()
         }
         ("summary", _) => "`summary` is allowed on a struct or an enum variant, not on a field".into(),
-        ("items" | "text" | "len" | "only" | "value", Place::VariantField) => format!("`{key}` is not supported inside enum variants"),
+        ("items" | "text" | "len" | "only" | "value", Place::VariantField) => {
+            format!("`{key}` is not supported inside enum variants")
+        }
         (_, Place::Struct | Place::Enum | Place::Variant) => format!("`{key}` is allowed on fields only"),
         _ => format!("`{key}` is not allowed here"),
     }
@@ -220,8 +222,7 @@ fn parse_path_str(s: &str, lit: &LitStr, what: &str) -> Result<Vec<String>> {
         if seg.is_empty() {
             return Err(err(format!("empty segment in `{what}` path `{s}`")));
         }
-        if let Some((first, rest)) = seg.split_once(char::is_whitespace) {
-            let _ = first;
+        if let Some((_, rest)) = seg.split_once(char::is_whitespace) {
             return Err(err(format!("unexpected `{}` in `{what}`", rest.trim())));
         }
         let seg = seg.strip_prefix("r#").unwrap_or(seg);
@@ -470,6 +471,8 @@ fn check_enum_path(path: &[String], lit: &LitStr, variants: &[Variant]) -> Resul
     }
 }
 
+// A table: one case per line, input beside expected output.
+#[rustfmt::skip]
 #[cfg(test)]
 mod tests {
     use super::*;

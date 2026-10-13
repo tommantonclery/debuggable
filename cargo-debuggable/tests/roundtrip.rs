@@ -1,6 +1,7 @@
 //! `setup` then `setup --remove` against a temporary HOME: files are edited only inside
 //! marked blocks, setup is idempotent, a hand-made configuration is left alone, and
 //! removal restores every file byte-for-byte. Needs no debugger installed (explicit flags).
+//! Plus the CLI contract that is easy to get wrong: which stream help goes to, and exit codes.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -33,7 +34,11 @@ fn setup_is_idempotent_and_remove_restores_everything() {
     let home = root.join("home");
     let project = root.join("proj");
     fs::create_dir_all(project.join("src")).unwrap();
-    fs::write(project.join("Cargo.toml"), "[package]\nname = \"proj\"\nversion = \"0.1.0\"\nedition = \"2021\"\n[workspace]\n").unwrap();
+    fs::write(
+        project.join("Cargo.toml"),
+        "[package]\nname = \"proj\"\nversion = \"0.1.0\"\nedition = \"2021\"\n[workspace]\n",
+    )
+    .unwrap();
     fs::write(project.join("src/main.rs"), "fn main() {}\n").unwrap();
 
     let originals = [
@@ -73,4 +78,20 @@ fn setup_is_idempotent_and_remove_restores_everything() {
     }
     assert!(!home.join(".local/share/debuggable/lldb/debuggable_lldb.py").exists());
     let _ = fs::remove_dir_all(&root);
+}
+
+/// `--help` is a request, not a usage error: help on stdout and exit 0, for the top-level
+/// command and for each subcommand. A genuinely bad option must still fail.
+#[test]
+fn help_goes_to_stdout_and_succeeds() {
+    let run = |args: &[&str]| Command::new(env!("CARGO_BIN_EXE_cargo-debuggable")).args(args).output().unwrap();
+    for args in [&["--help"][..], &["setup", "--help"][..], &["doctor", "--help"][..], &["setup", "-h"][..]] {
+        let out = run(args);
+        assert_eq!(out.status.code(), Some(0), "{args:?} exited with {:?}", out.status.code());
+        assert!(String::from_utf8_lossy(&out.stdout).contains("USAGE:"), "{args:?}: no usage on stdout");
+        assert!(out.stderr.is_empty(), "{args:?} wrote to stderr: {}", String::from_utf8_lossy(&out.stderr));
+    }
+    let bad = run(&["setup", "--nope"]);
+    assert_eq!(bad.status.code(), Some(2), "an unknown option must still be an error");
+    assert!(String::from_utf8_lossy(&bad.stderr).contains("unknown option"), "{}", String::from_utf8_lossy(&bad.stderr));
 }

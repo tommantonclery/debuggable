@@ -34,13 +34,17 @@ fn main() {
     if args.first().map(String::as_str) == Some("debuggable") {
         args.remove(0); // invoked as `cargo debuggable ...`
     }
+    let help = || {
+        print!("{HELP}");
+        Ok(0)
+    };
+    let wants_help = |args: &[String]| args.iter().any(|a| a == "-h" || a == "--help");
     let result = match args.first().map(String::as_str) {
+        Some("-h" | "--help" | "help") | None => help(),
+        // Asking a subcommand for help is not a usage error: stdout, exit 0, like the above.
+        Some("setup" | "doctor") if wants_help(&args[1..]) => help(),
         Some("setup") => parse_setup(&args[1..]).and_then(setup::run).map(|()| 0),
         Some("doctor") => parse_doctor(&args[1..]).and_then(doctor::run),
-        Some("-h" | "--help" | "help") | None => {
-            print!("{HELP}");
-            Ok(0)
-        }
         Some("-V" | "--version") => {
             println!("cargo-debuggable {}", env!("CARGO_PKG_VERSION"));
             Ok(0)
@@ -65,7 +69,6 @@ fn parse_setup(args: &[String]) -> Result<setup::Options, String> {
             "--vscode" => o.vscode = true,
             "--dry-run" => o.dry_run = true,
             "--remove" => o.remove = true,
-            "-h" | "--help" => return Err(HELP.into()),
             other => return Err(format!("unknown option `{other}` for setup\n\n{HELP}")),
         }
     }

@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: "A type shows raw, or a row reads `<only: ...>` / `<items: ...>`"
+    url: https://github.com/tommantonclery/debuggable/blob/main/docs/troubleshooting.md
+    about: "Usually setup, or an annotation to fix, rather than a bug; `doctor` and this page name it."

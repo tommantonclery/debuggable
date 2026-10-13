@@ -7,6 +7,31 @@ fn contains(hay: &[u8], needle: &str) -> bool {
     hay.windows(needle.len()).any(|w| w == needle.as_bytes())
 }
 
+/// Every `debuggable` entry in a binary, as (name, whole entry in bytes, descriptor JSON).
+/// Entries are `0x04 <name> 0x0A <body> 0x00` (schema-v1 §3), so they can be read straight out
+/// of the file without an ELF parser, as `doctor` does from the section.
+#[cfg(all(unix, not(target_vendor = "apple")))]
+fn entries(bytes: &[u8]) -> Vec<(String, usize, Option<String>)> {
+    const MARK: &[u8] = b"\x04debuggable-";
+    let (mut out, mut at) = (Vec::new(), 0);
+    while let Some(off) = bytes[at..].windows(MARK.len()).position(|w| w == MARK) {
+        let start = at + off;
+        let end = bytes[start..].iter().position(|b| *b == 0).map_or(bytes.len(), |n| start + n);
+        let entry = &bytes[start..end];
+        let name = String::from_utf8_lossy(&entry[1..entry.iter().position(|b| *b == b'\n').unwrap_or(entry.len())]);
+        let json = entry
+            .windows(4)
+            .position(|w| w == b"r'''")
+            .map(|i| &entry[i + 4..])
+            .and_then(|rest| rest.windows(3).position(|w| w == b"'''").map(|i| &rest[..i]))
+            .map(|j| String::from_utf8_lossy(j).into_owned());
+        out.push((name.into_owned(), end - start + 1, json));
+        at = end + 1;
+    }
+    out.dedup_by(|a, b| a.0 == b.0);
+    out
+}
+
 /// Entry names each fixture binary must carry (schema-v1 §3.1), including entries from
 /// dependency crates and from a pure-data type with no functions.
 const EXPECTED: &[(&str, &[&str])] = &[
@@ -64,9 +89,10 @@ fn doctor_matches_every_type_in_debug_info() {
             // Only the binary's section: the configuration checks depend on this machine.
             let binary_part = text.split_once("\nBinary ").map_or("", |(_, b)| b);
             let all_found = binary_part.lines().any(|l| {
-                l.trim_start().strip_prefix("ok    ").and_then(|m| m.split_once(" described type(s) found")).is_some_and(
-                    |(counts, _)| matches!(counts.split_once(" of "), Some((a, b)) if a == b),
-                )
+                l.trim_start()
+                    .strip_prefix("ok    ")
+                    .and_then(|m| m.split_once(" described type(s) found"))
+                    .is_some_and(|(counts, _)| matches!(counts.split_once(" of "), Some((a, b)) if a == b))
             });
             if !all_found || binary_part.contains("  warn  ") {
                 problems.push(format!("{profile}/{fixture}:\n{text}{}", String::from_utf8_lossy(&out.stderr)));
@@ -76,6 +102,9 @@ fn doctor_matches_every_type_in_debug_info() {
     assert!(problems.is_empty(), "{}", problems.join("\n"));
 }
 
+/// Entries sit in an allocated section, so `strip` keeps them; `--strip-debug` only drops
+/// sections BFD marks as debugging, which excludes allocated ones. Both are claimed in
+/// `docs/compatibility.md`, so both are checked.
 #[test]
 fn entries_survive_strip() {
     if Command::new("strip").arg("--version").output().is_err() {
@@ -83,12 +112,60 @@ fn entries_survive_strip() {
         return;
     }
     build("dev");
-    let out = std::env::temp_dir().join(format!("debuggable-stripped-{}", std::process::id()));
-    let st = Command::new("strip").arg("-o").arg(&out).arg(binary("structs", "dev")).status().unwrap();
-    assert!(st.success());
-    let bytes = std::fs::read(&out).unwrap();
-    let _ = std::fs::remove_file(&out);
-    assert!(contains(&bytes, "debuggable-v1-fx_structs::geo::Point@"), "entry removed by strip");
+    for (i, flags) in [&[][..], &[STRIP_DEBUG][..]].iter().enumerate() {
+        let out = std::env::temp_dir().join(format!("debuggable-stripped-{}-{i}", std::process::id()));
+        let st = Command::new("strip").args(*flags).arg("-o").arg(&out).arg(binary("structs", "dev")).status().unwrap();
+        assert!(st.success(), "`strip {}` failed", flags.join(" "));
+        let bytes = std::fs::read(&out).unwrap();
+        let _ = std::fs::remove_file(&out);
+        assert!(contains(&bytes, "debuggable-v1-fx_structs::geo::Point@"), "entry removed by `strip {}`", flags.join(" "));
+    }
+}
+
+/// The size budget in schema-v1 §8, on a fixture binary. ELF only: Mach-O carries no runtime
+/// entry. The limits have headroom over what entries cost today (145 B of framing, 6,487 B of
+/// runtime at minor 7); if one trips, remeasure, then move it deliberately and say so in §8.
+#[cfg(all(unix, not(target_vendor = "apple")))]
+#[test]
+fn entries_stay_within_the_size_budget() {
+    const FRAMING_MAX: usize = 160; // entry minus its name and its JSON
+    const JSON_MAX: usize = 250;
+    const RUNTIME_MAX: usize = 7 * 1024;
+    build("dev");
+    let bytes = std::fs::read(binary("structs", "dev")).unwrap();
+    let found = entries(&bytes);
+    let mut over = Vec::new();
+    let mut descriptors = 0;
+    let mut runtimes = 0;
+    for (name, size, json) in &found {
+        match json {
+            Some(json) => {
+                descriptors += 1;
+                let framing = size - name.len() - json.len();
+                if json.len() > JSON_MAX {
+                    over.push(format!("{name}: JSON is {} B, over the {JSON_MAX} B budget", json.len()));
+                }
+                if framing > FRAMING_MAX {
+                    over.push(format!("{name}: framing is {framing} B, over the {FRAMING_MAX} B budget"));
+                }
+            }
+            None => {
+                runtimes += 1;
+                if *size > RUNTIME_MAX {
+                    over.push(format!("{name}: {size} B, over the {RUNTIME_MAX} B budget"));
+                }
+            }
+        }
+    }
+    assert!(descriptors >= 4 && runtimes == 1, "expected 4 descriptors and 1 runtime, found: {found:?}");
+    assert!(
+        over.is_empty(),
+        "schema-v1 §8:\n{}",
+        over.join(
+            "
+"
+        )
+    );
 }
 
 #[test]
@@ -114,12 +191,15 @@ fn disable_flag_emits_nothing() {
 
 #[test]
 fn embedded_gdb_runtime_is_fresh() {
-    let st = Command::new("python3")
-        .current_dir(repo_root())
-        .args(["tools/gen-runtime.py", "--check"])
-        .status();
+    let st = Command::new("python3").current_dir(repo_root()).args(["tools/gen-runtime.py", "--check"]).status();
     match st {
         Ok(st) => assert!(st.success(), "run tools/gen-runtime.py"),
         Err(_) => eprintln!("SKIPPED: python3 not found"),
     }
 }
+
+/// GNU strip spells it `--strip-debug`; Apple's strip only has `-S`.
+#[cfg(target_os = "macos")]
+const STRIP_DEBUG: &str = "-S";
+#[cfg(not(target_os = "macos"))]
+const STRIP_DEBUG: &str = "--strip-debug";

@@ -42,8 +42,8 @@ mod plain {
 }
 
 mod pretty {
-    use super::*;
     pub use super::plain::{Slot, SlotUnion};
+    use super::*;
 
     #[derive(Debuggable)]
     #[debuggable(summary = "{num_elems} items")]
@@ -79,10 +79,8 @@ macro_rules! build {
         for (slot, b) in xs.iter_mut().zip(b"ferris".iter()) {
             slot.write(*b);
         }
-        let used = |v: &str, version: u32| $m::Slot {
-            u: $m::SlotUnion { value: ManuallyDrop::new(v.to_string()) },
-            version,
-        };
+        let used =
+            |v: &str, version: u32| $m::Slot { u: $m::SlotUnion { value: ManuallyDrop::new(v.to_string()) }, version };
         let free = |next: u32, version: u32| $m::Slot { u: $m::SlotUnion { next_free: next }, version };
         $m::Player {
             name: $m::InlineString { len: 6, xs },

@@ -26,8 +26,12 @@ def embedded_form(src):
     """gdb.py as embedded: comment-only lines blanked and docstrings reduced to `""`.
 
     Line numbers are preserved, so tracebacks still point at the right line of gdb.py.
-    Assumes every triple-quoted string in gdb.py starts its own line (true for docstrings;
-    `--check` would fail on a syntax error otherwise, since GDB would reject the script).
+
+    Only a triple-quoted string that starts its own line survives this correctly, which is true
+    of docstrings. Anything else is mangled: a multi-line string whose closing quotes sit on their
+    own line comes out unterminated, and a string literal alone on a line is replaced by `""`.
+    `main` therefore compiles the result -- comparing it with itself, as `--check` does, cannot
+    catch either, and GDB would reject the whole script.
     """
     out = []
     in_doc = False
@@ -50,6 +54,11 @@ def embedded_form(src):
 
 def main():
     src = embedded_form(SRC.read_bytes())
+    try:
+        compile(src, str(SRC), "exec")
+    except SyntaxError as e:
+        sys.exit("error: %s is not valid Python once embedded (%s, line %s); see embedded_form"
+                 % (SRC.relative_to(ROOT), e.msg, e.lineno))
     minor = re.search(rb"^MINOR = (\d+)", src, re.M).group(1).decode()
     name = "debuggable-runtime-gdb-v1.%s" % minor
     if name not in RUST.read_text():

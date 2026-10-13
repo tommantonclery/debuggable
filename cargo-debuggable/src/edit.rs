@@ -3,7 +3,7 @@
 //! Every change lives in a marked block, so it can be updated or removed exactly:
 //!
 //! ```text
-//! # >>> debuggable (managed by `cargo debuggable setup`; undo with `--remove`) >>>
+//! # >>> debuggable (managed by `cargo debuggable setup`; undo with `cargo debuggable setup --remove`) >>>
 //! ...
 //! # <<< debuggable <<<
 //! ```
@@ -168,10 +168,7 @@ fn scan(text: &str, key: &str) -> Result<Scan, String> {
                 depth += 1;
                 if b[i] == b'[' && depth == 2 && want_array_for_key {
                     let after = i + 1;
-                    let next = text[after..]
-                        .bytes()
-                        .find(|c| !c.is_ascii_whitespace())
-                        .unwrap_or(b']');
+                    let next = text[after..].bytes().find(|c| !c.is_ascii_whitespace()).unwrap_or(b']');
                     array = Some((after, next));
                     want_array_for_key = false;
                 }
@@ -322,7 +319,8 @@ mod tests {
         let a = set_hash_block(original, &["add-auto-load-safe-path /p/target".into()]);
         assert!(a.starts_with(original));
         assert_eq!(block_lines(&a, Comment::Hash).unwrap(), vec!["add-auto-load-safe-path /p/target"]);
-        let b = set_hash_block(&a, &["add-auto-load-safe-path /p/target".into(), "add-auto-load-safe-path /q/target".into()]);
+        let b =
+            set_hash_block(&a, &["add-auto-load-safe-path /p/target".into(), "add-auto-load-safe-path /q/target".into()]);
         assert_eq!(block_lines(&b, Comment::Hash).unwrap().len(), 2);
         assert_eq!(set_hash_block(&b, &b_lines(&b)), b, "idempotent");
         assert_eq!(set_hash_block(&b, &[]), original, "remove restores the file exactly");
@@ -387,7 +385,8 @@ mod tests {
 
     #[test]
     fn vscode_manual_setup_is_left_alone() {
-        // the user's file from the Phase 5 experiment, configured by hand
+        // wired up by hand, importing the loader from a source checkout rather than the
+        // installed path: we must not touch it
         let manual = "{\n    \"lldb.launch.preRunCommands\": [\n    \"command script import /home/u/src/debuggable/cargo-debuggable/assets/debuggable_lldb.py\"\n    ]\n}\n";
         assert_eq!(set_vscode_command(manual, Some(CMD)).unwrap(), JsonEdit::AlreadyManual);
     }

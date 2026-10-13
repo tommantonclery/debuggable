@@ -41,8 +41,10 @@ a `cfg` in the expanded code would be evaluated in the **user's** crate, and on 
 gives every user an `unexpected_cfgs` warning for `debuggable_disable`. `RUSTFLAGS` applies to
 the facade too, so `--cfg debuggable_disable` still works.
 
-> To verify in Phase 2: how the facade declares `check-cfg` for `debuggable_disable` without
-> breaking Cargo 1.75 (an unknown manifest key versus a `build.rs`; we prefer no `build.rs`).
+The flag itself is declared to rustc's `unexpected_cfgs` lint through `[workspace.lints.rust]`
+in the root `Cargo.toml`, so no `build.rs` is needed. Cargo 1.75 predates the `check-cfg` key
+and warns `unused manifest key: workspace.lints.rust.unexpected_cfgs.check-cfg` when building
+at the MSRV. The lint simply is not applied there, which is harmless; the MSRV job expects it.
 
 ### 2.2 Lint constraints (from the spike)
 
@@ -57,7 +59,8 @@ the facade too, so `--cfg debuggable_disable` still works.
 Each entry is assembled with a single `concat!` (every piece is ASCII text) and turned into
 the static's `[u8; N]` by one read in `__private::bytes`. Never build entries by copying bytes
 in a `const fn` loop: const evaluation costs about 10 µs per byte without incremental
-compilation, which was 4.5 ms per derived type (now about 1 ms, mostly the derive itself).
+compilation, which measured 4–5 ms per derived type depending on the machine (now about 1 ms,
+mostly the derive itself).
 `tools/bench-compile-time.py` guards this in CI.
 
 ## 3. Entry format
@@ -294,8 +297,13 @@ Known limitations, documented for users, with `doctor` reporting descriptors tha
 
 | Item | Target |
 |---|---|
-| Descriptor entry overhead (name + 3-line body, excluding JSON) | ≤ 180 B |
+| Descriptor entry framing and 3-line body (excluding the name and the JSON) | 145 B, fixed |
+| Entry name, `debuggable-v1-<path>@<version>` | 14 B + the type path + the version |
 | Typical descriptor JSON | 60–250 B |
 | Runtime entry (zlib + base64) | ≤ 7 KB (6.4 KB at minor 7; raised from 5 KB for `slots` and to 7 KB for `alternatives`: comment lines blanked and docstrings reduced to `""`, line numbers preserved). |
 
-These are measured in CI on the fixture crate, and the regression threshold is set in Phase 6.
+These are enforced: `entries_stay_within_the_size_budget` in `tests/harness/tests/structure.rs`
+reads the entries out of the `fx-structs` binary and fails if one is over, with headroom over the
+figures above (measured at GDB runtime 1.7). It is ELF-only, so it runs in the Linux debugger
+jobs. The runtime entry is also just the length of `debuggable/src/runtime/gdb.py.zb64`, which
+`tools/gen-runtime.py` prints when it regenerates the file.

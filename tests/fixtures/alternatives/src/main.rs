@@ -130,9 +130,7 @@ pub struct Fixture {
     pub bad_len: BadLen,
 }
 
-/// The harness breaks here and prints `f`'s fields. The empty `asm!` keeps `f` live and its
-/// pointee in memory without a call: `black_box` would be inlined in release builds, and the
-/// breakpoint would then land in its inlined frame, where `f` is not in scope.
+/// Where the harness breaks and prints `f`'s fields; `tests/README.md` explains the `asm!`.
 #[no_mangle]
 #[inline(never)]
 pub fn debuggable_fixture_stop(f: &Fixture) {

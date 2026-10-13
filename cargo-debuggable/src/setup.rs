@@ -137,7 +137,9 @@ pub fn run(mut o: Options) -> Result<(), String> {
     println!();
     match (o.remove, cx.changed, o.dry_run) {
         (_, 0, _) => println!("Nothing to change."),
-        (true, n, false) => println!("Removed debuggable's configuration ({n} change(s)). Backups (*.debuggable.bak) were kept."),
+        (true, n, false) => {
+            println!("Removed debuggable's configuration ({n} change(s)). Backups (*.debuggable.bak) were kept.")
+        }
         (false, n, false) => println!("Done ({n} change(s)). Check with `cargo debuggable doctor <binary>`."),
         (_, n, true) => println!("{n} change(s) would be made. Run again without --dry-run to apply."),
     }

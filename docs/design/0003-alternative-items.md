@@ -146,11 +146,11 @@ runtime 1.7 and LLDB loader 1.5.
 An `alternatives` fixture copies smallvec's default layout and tinyvec's (no dependencies), each
 with an inline and a spilled instance, with `u32` and `String` elements, plus an empty one. A
 misspelled variant in the alternative that would be active checks the "no alternative matched"
-row, and two more types check the other error rows. `{#}` is used in struct and variant
-summaries, and on a slot collection in the `slots` fixture. Snapshots
-cover GDB 15, LLDB 18, 20 and 22 and Apple LLDB in all four profiles, with derive unit tests for
-each error above and a UI test for a span. Annotated local copies of smallvec 1 and tinyvec 1 get
-checked in rust-gdb and LLDB.
+row, and two more types check the other error rows. `{#}` is used in struct and variant summaries,
+and on a slot collection in the `slots` fixture. Snapshots cover GDB 15, LLDB 18, 20 and 22 and
+Apple LLDB in all four profiles, with derive unit tests for each error above and a UI test for a
+span. Local copies of smallvec 1 and tinyvec 1, annotated as above, were checked in rust-gdb and
+LLDB.
 
 ## Out of scope
 

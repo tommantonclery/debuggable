@@ -254,7 +254,7 @@
 //!
 //! # Cost, and opting out
 //!
-//! About 300 bytes per derived type in the final binary, plus a 5 KB GDB runtime once per
+//! About 300 bytes per derived type in the final binary, plus a 6 KB GDB runtime once per
 //! Linux binary: data in a section that only debuggers read. On Windows nothing is emitted
 //! (not supported yet). Build with `RUSTFLAGS="--cfg debuggable_disable"` to emit nothing
 //! anywhere.

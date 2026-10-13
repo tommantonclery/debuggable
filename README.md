@@ -252,6 +252,11 @@ descriptions, so GDB only needs to trust your build directory. LLDB can't load a
 binary, so `cargo debuggable setup` installs a loader that reads the same descriptions. More in
 [how it works](docs/how-it-works.md).
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the layout, how to run each tier of
+tests, and what a schema or runtime change involves.
+
 ## License
 
 Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or [MIT license](LICENSE-MIT)

@@ -47,25 +47,20 @@ pub fn fixtures_dir() -> PathBuf {
     repo_root().join("tests/fixtures")
 }
 
-fn profiles_from_env() -> Vec<String> {
+/// Profiles selected for this run: `DEBUGGABLE_PROFILES`, or all of [`PROFILES`].
+pub fn profiles() -> Vec<String> {
     match std::env::var("DEBUGGABLE_PROFILES") {
         Ok(v) => v.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect(),
         Err(_) => PROFILES.iter().map(|s| s.to_string()).collect(),
     }
 }
 
-/// Profiles selected for this run.
-pub fn profiles() -> Vec<String> {
-    profiles_from_env()
-}
-
 fn probe(bin: &str) -> Option<Debugger> {
     let out = Command::new(bin).arg("--version").output().ok()?;
     let text = String::from_utf8_lossy(&out.stdout).to_string();
     let first = text.lines().next()?.trim().to_string();
-    let first_number = |s: &str| -> Option<u32> {
-        s.split(|c: char| !c.is_ascii_digit()).find(|t| !t.is_empty())?.parse().ok()
-    };
+    let first_number =
+        |s: &str| -> Option<u32> { s.split(|c: char| !c.is_ascii_digit()).find(|t| !t.is_empty())?.parse().ok() };
     if first.starts_with("GNU gdb") {
         // "GNU gdb (Ubuntu 15.1-1ubuntu1~24.04.1) 15.1": the version is the last token.
         let major = first_number(first.rsplit(' ').next()?)?;
@@ -128,10 +123,7 @@ pub fn build(profile: &str) {
     if built.iter().any(|p| p == profile) {
         return;
     }
-    let out = cargo_in_fixtures()
-        .args(["build", "--workspace", "--profile", profile])
-        .output()
-        .expect("run cargo");
+    let out = cargo_in_fixtures().args(["build", "--workspace", "--profile", profile]).output().expect("run cargo");
     assert!(out.status.success(), "fixture build failed ({profile}):\n{}", String::from_utf8_lossy(&out.stderr));
     built.push(profile.to_string());
 }

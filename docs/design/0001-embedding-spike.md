@@ -48,9 +48,9 @@ accepts a literal path, not `concat!(env!("OUT_DIR"), ...)`.
   crate. The attribute therefore lives in a `macro_rules!` in `debuggable`, and crates with
   `#![forbid(unsafe_code)]` still compile. Emitting `#[allow(unsafe_code)]` instead would be a hard
   error (E0453) under `forbid`.
-- **Compile time:** building entry bytes in a `const fn` loop cost about 4.5 ms per type without
-  incremental compilation. Entries are now one `concat!` string, about 1 ms per type
-  (`tools/bench-compile-time.py` guards this in CI).
+- **Compile time:** building entry bytes in a `const fn` loop cost 4–5 ms per type without
+  incremental compilation, depending on the machine. Entries are now one `concat!` string, about
+  1 ms per type (`tools/bench-compile-time.py` guards this in CI).
 - **Enums in GDB:** values reached through arrays arrive with every variant listed, so the runtime
   re-reads them through their address before choosing the active variant.
 - **Enums in LLDB:** LLDB 20 and earlier truncate variant discriminants to 32 bits in member names
