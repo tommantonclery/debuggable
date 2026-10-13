@@ -112,7 +112,7 @@ fn entries_survive_strip() {
         return;
     }
     build("dev");
-    for (i, flags) in [&[][..], &["--strip-debug"][..]].iter().enumerate() {
+    for (i, flags) in [&[][..], &[STRIP_DEBUG][..]].iter().enumerate() {
         let out = std::env::temp_dir().join(format!("debuggable-stripped-{}-{i}", std::process::id()));
         let st = Command::new("strip").args(*flags).arg("-o").arg(&out).arg(binary("structs", "dev")).status().unwrap();
         assert!(st.success(), "`strip {}` failed", flags.join(" "));
@@ -197,3 +197,9 @@ fn embedded_gdb_runtime_is_fresh() {
         Err(_) => eprintln!("SKIPPED: python3 not found"),
     }
 }
+
+/// GNU strip spells it `--strip-debug`; Apple's strip only has `-S`.
+#[cfg(target_os = "macos")]
+const STRIP_DEBUG: &str = "-S";
+#[cfg(not(target_os = "macos"))]
+const STRIP_DEBUG: &str = "--strip-debug";
