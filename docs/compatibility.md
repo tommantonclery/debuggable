@@ -1,10 +1,12 @@
 # Compatibility
 
 Everything marked **CI** is tested on every commit by snapshot tests that run the real debugger
-and compare its output. The fixtures cover summaries, hidden and renamed fields, tuple fields,
-generics, enums (tagged and niche layouts, arrays, references), both kinds of `items`, nested
-summaries, types from dependency crates, and crates with `#![forbid(unsafe_code)]` on editions
-2021 and 2024. Each runs in **dev, release, thin-LTO and fat-LTO** builds.
+and compare its output. The seven fixtures cover summaries, hidden and renamed fields, tuple
+fields, generics, enums (tagged and niche layouts, arrays, references), `text` fields, every form
+of `items` — on a field, on a slot collection with `only` and `value`, and as type-level
+alternatives — `{#}`, nested summaries, types from dependency crates, and crates with
+`#![forbid(unsafe_code)]` on editions 2021 and 2024. Each runs in **dev, release, thin-LTO and
+fat-LTO** builds.
 
 ## Debuggers
 

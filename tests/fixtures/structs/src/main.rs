@@ -34,9 +34,7 @@ pub struct Plain { pub a: u8 }
 
 pub struct Fixture { pub point: geo::Point, pub meters: Meters, pub account: Account, pub trip: Trip, pub plain: Plain }
 
-/// The harness breaks here and prints `f`'s fields. The empty `asm!` keeps `f` live and its
-/// pointee in memory without a call: `black_box` would be inlined in release builds, and the
-/// breakpoint would then land in its inlined frame, where `f` is not in scope.
+/// Where the harness breaks and prints `f`'s fields; `tests/README.md` explains the `asm!`.
 #[no_mangle]
 #[inline(never)]
 pub fn debuggable_fixture_stop(f: &Fixture) {

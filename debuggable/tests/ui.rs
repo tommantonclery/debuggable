@@ -1,7 +1,8 @@
 //! Compile-fail tests: what a user sees for invalid `#[debuggable(...)]` attributes.
 //! Messages are checked in debuggable-derive's unit tests; these check the spans.
-//! Regenerate the expected output with `TRYBUILD=overwrite cargo test -p debuggable --test ui`,
-//! then review the `.stderr` diffs.
+//! Run these on the toolchain pinned in `tests/fixtures/rust-toolchain.toml`, as CI does:
+//! rustc's diagnostic layout is part of the expected output. Regenerate it with
+//! `TRYBUILD=overwrite`, then review every `.stderr` diff.
 
 #[test]
 fn ui() {

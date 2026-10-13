@@ -1,0 +1,81 @@
+name: Bug report
+description: A type renders wrongly, the derive rejects something it shouldn't, or setup misbehaves
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        If a type shows raw rather than as its summary, that is usually configuration rather than
+        a bug: run `cargo debuggable doctor target/debug/<your-binary>` first, and check
+        [troubleshooting](../blob/main/docs/troubleshooting.md). A `<only: ...>` or `<items: ...>`
+        row means the annotation needs fixing, and that page says how.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What you saw, and what you expected instead
+      placeholder: |
+        `print map` shows `2 items = {...}` but the elements are the vacant slots, not the values.
+    validations:
+      required: true
+
+  - type: textarea
+    id: type
+    attributes:
+      label: The type, with its attributes
+      description: Cut down as far as it still reproduces.
+      render: rust
+      placeholder: |
+        #[derive(Debuggable)]
+        #[debuggable(summary = "{len} items")]
+        pub struct SlotMap<T> {
+            #[debuggable(items, len = "len")]
+            slots: Vec<Slot<T>>,
+            #[debuggable(hide)]
+            len: u32,
+        }
+    validations:
+      required: true
+
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of `cargo debuggable doctor <binary>`
+      description: This covers the debuggers found, their versions, your configuration and what the binary embeds.
+      render: text
+    validations:
+      required: true
+
+  - type: dropdown
+    id: debugger
+    attributes:
+      label: Where you saw it
+      options:
+        - rust-gdb
+        - gdb
+        - rust-lldb or lldb
+        - VS Code (CodeLLDB)
+        - somewhere else
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Linux x86-64
+        - WSL 2
+        - macOS (Apple silicon)
+        - macOS (Intel)
+        - something else
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: debuggable version
+      placeholder: "0.1.3"
+    validations:
+      required: true

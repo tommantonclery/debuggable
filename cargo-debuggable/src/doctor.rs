@@ -95,7 +95,12 @@ fn check_gdbinit(r: &mut Report) -> Result<Vec<String>, String> {
         if let Some(lines) = edit::block_lines(&text, Comment::Hash) {
             let dirs: Vec<String> =
                 lines.iter().filter_map(|l| l.strip_prefix("add-auto-load-safe-path ")).map(str::to_string).collect();
-            r.ok(format!("{}: GDB trusts {} project director{}", pretty(&path), dirs.len(), if dirs.len() == 1 { "y" } else { "ies" }));
+            r.ok(format!(
+                "{}: GDB trusts {} project director{}",
+                pretty(&path),
+                dirs.len(),
+                if dirs.len() == 1 { "y" } else { "ies" }
+            ));
             trusted.extend(dirs);
         }
     }
@@ -254,9 +259,9 @@ fn check_type_names(r: &mut Report, file: &object::File, paths: &BTreeSet<String
         // whose DWARF name includes the function (`app::main::Local`) but whose descriptor
         // path, from `module_path!()`, can't.
         let (krate, ident) = (path.split("::").next().unwrap_or_default(), path.rsplit("::").next().unwrap_or_default());
-        let local = types.iter().find(|t| {
-            t.starts_with(&format!("{krate}::")) && t.ends_with(&format!("::{ident}")) && t.len() > path.len()
-        });
+        let local = types
+            .iter()
+            .find(|t| t.starts_with(&format!("{krate}::")) && t.ends_with(&format!("::{ident}")) && t.len() > path.len());
         match local {
             Some(t) => {
                 r.warn(format!("`{path}` is shown as `{t}` in the debug info, so debuggers won't match it."));
@@ -270,7 +275,8 @@ fn check_type_names(r: &mut Report, file: &object::File, paths: &BTreeSet<String
     }
     if !unused.is_empty() {
         let shown: Vec<&str> = unused.iter().take(5).copied().collect();
-        let more = if unused.len() > shown.len() { format!(" and {} more", unused.len() - shown.len()) } else { String::new() };
+        let more =
+            if unused.len() > shown.len() { format!(" and {} more", unused.len() - shown.len()) } else { String::new() };
         r.info(format!("{} described type(s) not used by this binary: {}{more}", unused.len(), shown.join(", ")));
     }
 }
@@ -315,12 +321,16 @@ fn dwarf_type_paths(file: &object::File) -> Option<BTreeSet<String>> {
                 .and_then(|v| dwarf.attr_string(&unit, v).ok())
                 .map(|s| s.to_string_lossy().into_owned());
             let tag = entry.tag();
+            #[rustfmt::skip] // two tags to a line
             let named_scope = matches!(
                 tag,
                 gimli::DW_TAG_namespace | gimli::DW_TAG_subprogram | gimli::DW_TAG_structure_type
                     | gimli::DW_TAG_union_type | gimli::DW_TAG_enumeration_type
             );
-            if let (true, Some(n)) = (matches!(tag, gimli::DW_TAG_structure_type | gimli::DW_TAG_union_type | gimli::DW_TAG_enumeration_type), &name) {
+            if let (true, Some(n)) = (
+                matches!(tag, gimli::DW_TAG_structure_type | gimli::DW_TAG_union_type | gimli::DW_TAG_enumeration_type),
+                &name,
+            ) {
                 let mut path: Vec<&str> = scope.iter().filter_map(|(_, n)| n.as_deref()).collect();
                 path.push(n.split('<').next().unwrap_or(n));
                 out.insert(path.join("::"));

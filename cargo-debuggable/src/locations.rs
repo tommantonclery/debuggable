@@ -1,11 +1,18 @@
-//! Where things live. Everything derives from `HOME` and the XDG variables, so tests can
-//! point the tool at a temporary home directory.
+//! Where things live. Everything derives from the home directory and the XDG variables, so
+//! tests can point the tool at a temporary home directory.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+/// The home directory: `HOME`, or `USERPROFILE`, which is what Windows sets instead.
 pub fn home() -> Result<PathBuf, String> {
-    std::env::var_os("HOME").map(PathBuf::from).ok_or_else(|| "HOME is not set".to_string())
+    for var in ["HOME", "USERPROFILE"] {
+        match std::env::var_os(var) {
+            Some(v) if !v.is_empty() => return Ok(PathBuf::from(v)),
+            _ => {}
+        }
+    }
+    Err("cannot find your home directory (HOME is not set)".to_string())
 }
 
 fn xdg(var: &str, default: &str) -> Result<PathBuf, String> {
@@ -149,7 +156,10 @@ mod tests {
     fn reads_cargo_metadata_fields() {
         let json = r#"{"packages":[],"target_directory":"/home/u/my \"proj\"/target","version":1}"#;
         assert_eq!(json_string_field(json, "target_directory").unwrap(), "/home/u/my \"proj\"/target");
-        assert_eq!(json_string_field(r#"{"target_directory": "C:\\x\\target"}"#, "target_directory").unwrap(), "C:\\x\\target");
+        assert_eq!(
+            json_string_field(r#"{"target_directory": "C:\\x\\target"}"#, "target_directory").unwrap(),
+            "C:\\x\\target"
+        );
         assert_eq!(json_string_field("{}", "target_directory"), None);
     }
 }

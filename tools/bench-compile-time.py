@@ -36,13 +36,12 @@ DEFAULT_MAX_MS_PER_TYPE = 2.5
 
 
 def generate(n, derive):
-    d = derive
     out = ["#![allow(dead_code)]", "use std::collections::HashMap;", "use std::marker::PhantomData;"]
-    if d:
+    if derive:
         out.append("use debuggable::Debuggable;")
 
     def attr(s):
-        return s if d else ""
+        return s if derive else ""
 
     for i in range(n):
         k = i % 3

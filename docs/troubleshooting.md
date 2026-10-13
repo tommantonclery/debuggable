@@ -62,6 +62,26 @@ The value isn't available in the debug info, which is common in release builds. 
 shows what the debugger can read and marks the rest, rather than failing. Debug builds
 (`cargo build`) give the most complete picture.
 
+## A row reads `<only: ...>`, `<items: ...>` or `<unsupported items source>`
+
+The annotation is wrong in a way the derive couldn't catch. `only` and `value` paths are followed
+inside the element type, which is usually generic or defined in another crate, and the deeper
+segments of an `items = "path"` alternative pass through types the derive can't see either. So the
+runtime reports the problem where you will see it, as a single `[..]` row, rather than showing an
+empty collection that would look valid. LLDB prints these in quotes; GDB doesn't.
+
+| Row | Cause |
+|---|---|
+| ``<only: no variant `X`>`` | The elements are an enum and `X` isn't one of its variants. |
+| ``<only: no field `a.b`>`` | The `only` path doesn't exist in the element type. Segments are field names; tuple fields are `0`, `1`, ... |
+| ``<only: `x` is not an integer>`` | The path resolved, but not to an integer or `bool`. Name the flag field itself, not the struct holding it. |
+| `<items: no alternative matched>` | No `items = "path"` on the type resolved in this value. Check every segment after the first. |
+| `<items: len is not an integer>` | An alternative's `len` path reached something that isn't an integer. |
+| `<unsupported items source>` | The field or path reached something that isn't a `Vec<T>`, an array, or a pointer with `len`. |
+
+`doctor` can't find these: they depend on the value in front of the debugger, not on the binary.
+A `<debuggable: ...>` row is different — that one is a bug in `debuggable` itself; please report it.
+
 ## A release build shows nothing at all
 
 The binary probably has no debug info: the release profile leaves it out by default. Add this

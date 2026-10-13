@@ -51,11 +51,13 @@ fn text() {
     check("text", &["name", "empty", "tag", "buf", "raw", "long"]);
 }
 
+#[rustfmt::skip] // the field list reads as one line
 #[test]
 fn slots() {
     check("slots", &["slab", "arena", "slotmap", "flagged", "typo", "all_vacant", "empty", "live", "wrapped", "nonscalar", "typo_field", "dangling", "dangling_rows"]);
 }
 
+#[rustfmt::skip]
 #[test]
 fn alternatives() {
     check(
@@ -77,8 +79,8 @@ fn non_ascii_summary_in_ascii_locale() {
     build("dev");
     let bin = binary("deps", "dev");
     for dbg in debuggers() {
-        let text = sections(&run_with_locale(&dbg, &bin, &["temp"], "C"), &["temp"])
-            .unwrap_or_else(|e| panic!("{}: {e}", dbg.id));
+        let text =
+            sections(&run_with_locale(&dbg, &bin, &["temp"], "C"), &["temp"]).unwrap_or_else(|e| panic!("{}: {e}", dbg.id));
         let expected = match dbg.kind {
             Kind::Gdb => "21.5\\u{b0}C",
             Kind::Lldb => "21.5\u{b0}C",
